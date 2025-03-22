@@ -8,7 +8,7 @@ const API_BASE_URL = process.env.API_BASE_URL || 'http://192.168.29.16:3000';
  * @param path - The tRPC procedure path (e.g. "auth.signup")
  * @param input - The input data for the mutation/query.
  * @param method - The request method ("mutation" or "query").
- * @returns The parsed JSON response.
+ * @returns The parsed JSON data from the tRPC response.
  */
 async function postRequest(
   path: string,
@@ -18,14 +18,14 @@ async function postRequest(
   const body = {
     id: Date.now(),
     method,
-    params: { input }, // <-- Pass input directly
+    params: { input }, // send input under params.input
     path,
   };
 
   const response = await fetch(`${API_BASE_URL}/trpc/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    credentials: 'include', // include cookies for secure endpoints
     body: JSON.stringify(body),
   });
 
@@ -33,18 +33,22 @@ async function postRequest(
     const errorText = await response.text();
     throw new Error(errorText);
   }
-  return response.json();
-}
 
+  // Unwrap the tRPC response (assumes format: { result: { data: ... } })
+  const json = await response.json();
+  if (!json.result || !json.result.data) {
+    throw new Error('Invalid response format');
+  }
+  return json.result.data;
+}
 
 // SIGN UP
 export async function signup(email: string, password: string, name?: string) {
   console.log('Signup initiated');
   const response = await postRequest('auth.signup', { email, password, name });
-  console.log('Response:', response);
+  console.log('Signup response:', response);
   return response;
 }
-
 
 // SIGN IN
 export async function signin(email: string, password: string) {

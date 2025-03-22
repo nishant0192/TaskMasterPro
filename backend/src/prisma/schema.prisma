@@ -31,6 +31,8 @@ model User {
     resetPasswordToken   String?
     resetPasswordExpires DateTime?
 
+    refreshTokenVersion  Int       @default(0)
+    
     // Relations
     teams         TeamMembership[]
     tasksCreated  Task[]           @relation("tasks_created")

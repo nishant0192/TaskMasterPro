@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, View, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSignup } from '@/api/auth/useAuth'; // Adjust import as needed
+import CustomInput from '@/components/CustomInput';
+import CustomText from '@/components/CustomText';
+import CustomButton from '@/components/CustomButton';
+import { useSignup } from '@/api/auth/useAuth';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -10,10 +12,8 @@ const Register = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const router = useRouter();
-
-  // Get the signup mutation
-  const { mutate: signup, status, error } = useSignup();
-  const isLoading = status === 'pending';
+  const { mutate: signup, error, status } = useSignup();
+  const isMutating = status === 'pending';
 
   const handleRegister = () => {
     if (password !== confirmPassword) {
@@ -24,12 +24,11 @@ const Register = () => {
       { name, email, password },
       {
         onSuccess: (data) => {
-          console.log('Signup successful', data);
-          // Navigate to login or home after successful registration
+          console.log('Registration successful', data);
           router.push('/auth/login');
         },
         onError: (err) => {
-          console.error('Error signing up', err);
+          console.error('Registration error', err);
           Alert.alert("Error", "Registration failed, please try again.");
         },
       }
@@ -38,64 +37,76 @@ const Register = () => {
 
   return (
     <SafeAreaView className="flex-1 bg-white px-4 py-8">
-      <Text className="text-3xl font-bold text-center mb-6">Register</Text>
-      <View className="mb-4">
-        <Text className="mb-2 text-base">Name</Text>
-        <TextInput
-          value={name}
-          onChangeText={setName}
-          placeholder="Enter your name"
-          className="border border-gray-300 rounded p-2"
+      <View className="flex-1">
+        <CustomText variant="pageHeader" className="text-center mb-6">
+          Register
+        </CustomText>
+        <View className="mb-4">
+          <CustomText variant="headingSmall" className="mb-2">
+            Name
+          </CustomText>
+          <CustomInput
+            value={name}
+            onChangeText={setName}
+            placeholder="Enter your name"
+            className="border border-gray-300 rounded p-2"
+          />
+        </View>
+        <View className="mb-4">
+          <CustomText variant="headingSmall" className="mb-2">
+            Email
+          </CustomText>
+          <CustomInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Enter your email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            className="border border-gray-300 rounded p-2"
+          />
+        </View>
+        <View className="mb-4">
+          <CustomText variant="headingSmall" className="mb-2">
+            Password
+          </CustomText>
+          <CustomInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Enter your password"
+            secureTextEntry
+            className="border border-gray-300 rounded p-2"
+          />
+        </View>
+        <View className="mb-6">
+          <CustomText variant="headingSmall" className="mb-2">
+            Confirm Password
+          </CustomText>
+          <CustomInput
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Confirm your password"
+            secureTextEntry
+            className="border border-gray-300 rounded p-2"
+          />
+        </View>
+        {error && (
+          <CustomText variant="headingSmall" className="text-red-500 text-center mb-4">
+            {error.message}
+          </CustomText>
+        )}
+        <CustomButton
+          title={isMutating ? 'Registering...' : 'Register'}
+          onPress={handleRegister}
+          className="bg-green-500 py-3 rounded mb-4"
+          textStyle={{ color: 'white', textAlign: 'center', fontWeight: 'bold' }}
+        />
+        <CustomButton
+          title="Already have an account? Login"
+          onPress={() => router.push('/auth/login')}
+          className="bg-transparent py-3"
+          textStyle={{ color: 'blue', textAlign: 'center' }}
         />
       </View>
-      <View className="mb-4">
-        <Text className="mb-2 text-base">Email</Text>
-        <TextInput
-          value={email}
-          onChangeText={setEmail}
-          placeholder="Enter your email"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          className="border border-gray-300 rounded p-2"
-        />
-      </View>
-      <View className="mb-4">
-        <Text className="mb-2 text-base">Password</Text>
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Enter your password"
-          secureTextEntry
-          className="border border-gray-300 rounded p-2"
-        />
-      </View>
-      <View className="mb-6">
-        <Text className="mb-2 text-base">Confirm Password</Text>
-        <TextInput
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          placeholder="Confirm your password"
-          secureTextEntry
-          className="border border-gray-300 rounded p-2"
-        />
-      </View>
-      {/* {error && (
-        <Text className="text-red-500 text-center mb-4">{error.message}</Text>
-      )} */}
-      <TouchableOpacity
-        onPress={handleRegister}
-        disabled={isLoading}
-        className="bg-green-500 py-3 rounded mb-4"
-      >
-        <Text className="text-white text-center font-bold">
-          {isLoading ? 'Registering...' : 'Register'}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => router.push('/auth/login')}>
-        <Text className="text-blue-500 text-center">
-          Already have an account? Login
-        </Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 };
