@@ -1,0 +1,53 @@
+{
+    "name": "taskmasterpro-backend",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "Backend for TaskMasterPro using tRPC, Express, and Prisma",
+    "main": "dist/server.js",
+    "scripts": {
+        "dev": "cross-env NODE_NO_WARNINGS=1 nodemon --watch src --ext ts,js --exec \"node --loader ts-node/esm\" src/server.ts",
+        "start": "cross-env NODE_ENV=production dotenv -e .env.production node dist/server.js",
+        "build": "tsc",
+        "prisma:generate:dev": "cross-env NODE_ENV=development dotenv -e .env.development npx prisma generate",
+        "prisma:generate:prod": "cross-env NODE_ENV=production dotenv -e .env.production npx prisma generate",
+        "prisma:migrate:dev": "cross-env NODE_ENV=development dotenv -e .env.development npx prisma migrate dev",
+        "prisma:migrate:prod": "cross-env NODE_ENV=production dotenv -e .env.production npx prisma migrate deploy"
+    },
+    "_moduleAliases": {
+        "@": "./src"
+    },
+    "prisma": {
+        "schema": "./src/prisma/schema.prisma"
+    },
+    "dependencies": {
+        "@prisma/client": "^6.5.0",
+        "@trpc/server": "^10.45.2",
+        "bcrypt": "^5.1.1",
+        "chalk": "4.0.0",
+        "cookie-parser": "^1.4.7",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.7",
+        "dotenv-cli": "^8.0.0",
+        "express": "^4.21.2",
+        "jsonwebtoken": "^9.0.2",
+        "module-alias": "^2.2.3",
+        "uuid": "^11.1.0",
+        "zod": "^3.24.2"
+    },
+    "devDependencies": {
+        "@types/bcrypt": "^5.0.2",
+        "@types/cookie-parser": "^1.4.8",
+        "@types/cors": "^2.8.17",
+        "@types/express": "^5.0.1",
+        "@types/jsonwebtoken": "^9.0.9",
+        "@types/node": "^22.13.11",
+        "cross-env": "^7.0.3",
+        "prisma": "^6.5.0",
+        "ts-node": "^10.9.2",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.8.2"
+    },
+    "engines": {
+        "node": ">=14"
+    }
+}

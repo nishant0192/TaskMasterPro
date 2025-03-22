@@ -1,0 +1,46 @@
+// ai-schema.prisma (AI Microservice)
+datasource db {
+  provider = "postgresql"
+  url      = env("AI_DATABASE_URL")  // e.g., postgres://user:password@host:port/ai_db
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model TaskPrediction {
+  id                      String    @id @default(uuid())
+  taskId                  String    // Reference to Task.id in the main DB
+  userId                  String?   // Optional: used for personalization if needed
+  modelVersion            String?   // Identifier/version of the AI model
+  predictedPriority       Int?      // AI-assigned priority score (or category)
+  predictedCompletionTime Int?      // Estimated duration (in minutes) or timestamp
+  recommendedDueDate      DateTime? // Suggested new due date/time for scheduling
+  createdAt               DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TrainingData {
+  id                     String    @id @default(uuid())
+  userId                 String?   // The user associated with this training sample
+  taskId                 String?   // The task associated (if applicable)
+  initialPriority        Int?      // Priority originally set by the user
+  actualCompletionTime   Int?      // Actual time taken (e.g., in minutes)
+  wasDeadlineMet         Boolean?  // Whether the task was finished before the deadline
+  createdAt              DateTime  @default(now())
+
+  @@index([userId])
+  @@index([taskId])
+}
+
+model BatchJob {
+  id         String   @id @default(uuid())
+  jobType    String   // e.g., "PREDICTION_UPDATE", "MODEL_TRAINING"
+  status     String   @default("PENDING")  // "PENDING", "RUNNING", "COMPLETED", "FAILED"
+  startedAt  DateTime?
+  finishedAt DateTime?
+  details    String?  // Optional details or logs regarding the batch job
+  createdAt  DateTime @default(now())
+}
