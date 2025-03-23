@@ -2,6 +2,7 @@
 
 import React, { useRef } from 'react';
 import { TouchableWithoutFeedback, Animated, StyleProp, ViewStyle, TextStyle, Text } from 'react-native';
+import CustomText from './CustomText';
 
 // You can pass tailwind classes via the "className" prop if you're using nativewind
 type CustomButtonProps = {
@@ -44,7 +45,7 @@ const CustomButton: React.FC<CustomButtonProps> = ({
         style={[{ transform: [{ scale: scaleAnim }] }, style]}
         className={className}
       >
-        <Text style={textStyle}>{title}</Text>
+        <CustomText variant={"headingMedium"} style={textStyle}>{title}</CustomText>
       </Animated.View>
     </TouchableWithoutFeedback>
   );

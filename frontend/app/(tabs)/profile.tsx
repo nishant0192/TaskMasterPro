@@ -3,19 +3,26 @@ import { SafeAreaView, View, Image } from 'react-native';
 import CustomText from '@/components/CustomText';
 import ProfileSkeleton from '@/components/skeleton/ProfileSkeleton';
 import { useGetProfile } from '@/api/user/useUser';
+import { useAuthStore } from '@/store/authStore';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function ProfileScreen() {
-    const { data, isLoading, error } = useGetProfile();
     const [minLoading, setMinLoading] = useState(true);
+    const userInStore = useAuthStore((state) => state.user);
 
-    // Ensure skeleton is displayed for at least 3 seconds.
+    // Enable the query only if the user is not already in the store.
+    const { data, isLoading, error } = useGetProfile({ enabled: !userInStore });
+
+    // Ensure the skeleton is displayed for at least 3 seconds.
     useEffect(() => {
         const timer = setTimeout(() => {
             setMinLoading(false);
         }, 3000);
         return () => clearTimeout(timer);
     }, []);
+
+    // Use the user from the store if available, otherwise use fetched data.
+    const user = userInStore || (data && data.user);
 
     if (isLoading || minLoading) {
         return (
@@ -25,17 +32,15 @@ export default function ProfileScreen() {
         );
     }
 
-    if (error) {
+    if (error || !user) {
         return (
             <SafeAreaView className="flex-1 bg-white p-4">
                 <CustomText variant="headingMedium" className="text-red-500 text-center">
-                    Error fetching profile: {error.message}
+                    Error fetching profile: {error ? error.message : 'User not found'}
                 </CustomText>
             </SafeAreaView>
         );
     }
-
-    const { user } = data;
 
     return (
         <SafeAreaView className="flex-1 bg-white p-4">

@@ -1,4 +1,4 @@
-import { refreshTokens } from './auth';
+import { refreshTokens } from './auth/auth';
 import { useAuthStore } from '@/store/authStore';
 import * as SecureStore from 'expo-secure-store';
 

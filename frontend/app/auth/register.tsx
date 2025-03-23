@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import CustomInput from '@/components/CustomInput';
 import CustomText from '@/components/CustomText';
 import CustomButton from '@/components/CustomButton';
+import StyledInput from '@/components/StyledInput';
 import { useSignup } from '@/api/auth/useAuth';
 
-const Register = () => {
+export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +25,7 @@ const Register = () => {
       {
         onSuccess: (data) => {
           console.log('Registration successful', data);
-          router.push('/auth/login');
+          router.push('/auth/Login');
         },
         onError: (err) => {
           console.error('Registration error', err);
@@ -35,58 +35,78 @@ const Register = () => {
     );
   };
 
+  // Custom dark-mode color palette for inputs
+  const inputColors = {
+    backgroundColor: "#1F2937",
+    textColor: "#fff",
+    placeholderTextColor: "#888",
+    neutralBorderColor: "#4B5563",
+    successBorderColor: "#32CD32",
+    errorBorderColor: "#FF4500",
+    clearIconColor: "#9CA3AF",
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-white px-4 py-8">
+    <SafeAreaView className="flex-1 bg-gray-900 p-6">
       <View className="flex-1">
-        <CustomText variant="pageHeader" className="text-center mb-6">
+        <CustomText variant="pageHeader" className="text-center mb-8 text-white">
           Register
         </CustomText>
         <View className="mb-4">
-          <CustomText variant="headingSmall" className="mb-2">
+          <CustomText variant="headingSmall" className="mb-2 text-gray-300">
             Name
           </CustomText>
-          <CustomInput
+          <StyledInput
+            mode="outlined"
+            labelText="Name"
             value={name}
             onChangeText={setName}
             placeholder="Enter your name"
-            className="border border-gray-300 rounded p-2"
+            keyboardType="default"
+            colors={inputColors}
           />
         </View>
         <View className="mb-4">
-          <CustomText variant="headingSmall" className="mb-2">
+          <CustomText variant="headingSmall" className="mb-2 text-gray-300">
             Email
           </CustomText>
-          <CustomInput
+          <StyledInput
+            mode="outlined"
+            labelText="Email"
             value={email}
             onChangeText={setEmail}
             placeholder="Enter your email"
             keyboardType="email-address"
             autoCapitalize="none"
-            className="border border-gray-300 rounded p-2"
+            colors={inputColors}
           />
         </View>
         <View className="mb-4">
-          <CustomText variant="headingSmall" className="mb-2">
+          <CustomText variant="headingSmall" className="mb-2 text-gray-300">
             Password
           </CustomText>
-          <CustomInput
+          <StyledInput
+            mode="outlined"
+            labelText="Password"
             value={password}
             onChangeText={setPassword}
             placeholder="Enter your password"
             secureTextEntry
-            className="border border-gray-300 rounded p-2"
+            colors={inputColors}
           />
         </View>
         <View className="mb-6">
-          <CustomText variant="headingSmall" className="mb-2">
+          <CustomText variant="headingSmall" className="mb-2 text-gray-300">
             Confirm Password
           </CustomText>
-          <CustomInput
+          <StyledInput
+            mode="outlined"
+            labelText="Confirm Password"
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Confirm your password"
             secureTextEntry
-            className="border border-gray-300 rounded p-2"
+            colors={inputColors}
           />
         </View>
         {error && (
@@ -97,18 +117,16 @@ const Register = () => {
         <CustomButton
           title={isMutating ? 'Registering...' : 'Register'}
           onPress={handleRegister}
-          className="bg-green-500 py-3 rounded mb-4"
+          className="bg-green-600 py-3 rounded mb-4 shadow-lg"
           textStyle={{ color: 'white', textAlign: 'center', fontWeight: 'bold' }}
         />
         <CustomButton
           title="Already have an account? Login"
-          onPress={() => router.push('/auth/login')}
+          onPress={() => router.push('/auth/Login')}
           className="bg-transparent py-3"
-          textStyle={{ color: 'blue', textAlign: 'center' }}
+          textStyle={{ color: 'lightblue', textAlign: 'center' }}
         />
       </View>
     </SafeAreaView>
   );
-};
-
-export default Register;
+}

@@ -1,5 +1,3 @@
-// frontend/components/CustomInput.tsx
-
 import React, { useState, useRef } from 'react';
 import { TextInput, Animated, StyleProp, ViewStyle, TextInputProps } from 'react-native';
 
@@ -32,14 +30,14 @@ const CustomInput: React.FC<CustomInputProps> = ({ containerStyle, className, st
 
   const borderColor = borderAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['gray', 'blue'],
+    outputRange: ['#555', '#1E90FF'], // Gray to DodgerBlue
   });
 
   return (
     <Animated.View
       style={[
         containerStyle,
-        { borderColor, borderWidth: 1, borderRadius: 4, padding: 4 },
+        { borderColor, borderWidth: 1, borderRadius: 8, padding: 8 },
       ]}
       className={className}
     >
@@ -47,7 +45,11 @@ const CustomInput: React.FC<CustomInputProps> = ({ containerStyle, className, st
         {...props}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        style={[{ padding: 10 }, style]}
+        style={[
+          { padding: 12, color: '#fff', backgroundColor: '#333' },
+          style,
+        ]}
+        placeholderTextColor="#888"
       />
     </Animated.View>
   );

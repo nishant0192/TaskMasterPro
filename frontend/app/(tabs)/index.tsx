@@ -10,18 +10,19 @@ export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
 
   return (
-    <SafeAreaView className="flex-1 bg-white p-4">
+    <SafeAreaView className="flex-1 p-4">
       <View className="flex-1 justify-center items-center">
-        <Text className="text-xl mb-4">Welcome, {secureStorage.getItem("accessToken")}</Text>
+        <Text className="text-xl mb-4 text-white">Welcome, {secureStorage.getItem("accessToken")}</Text>
         {user ? (
           <>
-          <Text className="text-xl mb-4">Welcome, {user.email}</Text>
-            <Text className="text-xl mb-4">Welcome, {user.id}</Text>
-            <Text className="text-xl mb-4">Welcome, {user.name}</Text>
-            <Button title="Go to Dashboard" onPress={() => router.push('/')} />
+            <Text className="text-xl mb-4 text-white">Welcome, {user.email}</Text>
+            <Text className="text-xl mb-4 text-white">Welcome, {user.id}</Text>
+            <Text className="text-xl mb-4 text-white">Welcome, {user.name}</Text>
+            <Button title="Go to Dashboard" onPress={() => router.push('/task/TaskListScreen')} />
           </>
         ) : (
-          <Button title="Click to Login" onPress={() => router.push('/auth/login')} />
+          // <Button title="Click to Login" onPress={() => router.push('/task/CreateTaskScreen')} />
+          <Button title="Click to Login" onPress={() => router.push('/auth/Login')} />
         )}
       </View>
     </SafeAreaView>

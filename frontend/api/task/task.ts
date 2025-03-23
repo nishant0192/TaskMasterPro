@@ -7,7 +7,7 @@ const API_BASE_URL = process.env.API_BASE_URL || 'http://192.168.29.16:3000';
  * If method is 'query', it sends a GET request with serialized input;
  * for mutations, it sends a POST request.
  *
- * @param path - The tRPC procedure path (e.g. "user.getProfile")
+ * @param path - The tRPC procedure path (e.g. "task.createTask")
  * @param input - The input data for the mutation/query.
  * @param method - The request method ("mutation" or "query").
  * @returns The parsed JSON response (unwrapped from the tRPC envelope).
@@ -32,7 +32,7 @@ async function request(
     }
     return json.result.data;
   } else {
-    // For mutations, use POST.
+    // For mutations, send a POST request.
     const body = {
       id: Date.now(),
       method,
@@ -54,33 +54,50 @@ async function request(
 }
 
 /**
- * Fetch the current user's profile.
+ * Create a new task.
+ * Input: { title: string; description?: string; dueDate?: string; priority?: number }
  */
-export async function getProfile() {
-  return request('user.getProfile', {}, 'query');
+export async function createTask(data: { title: string; description?: string; dueDate?: string; priority?: number }) {
+  return request('task.createTask', data, 'mutation');
 }
 
 /**
- * Update the current user's profile.
- * @param data - An object containing fields to update (e.g. name, profileImage)
+ * Retrieve all tasks for the current user.
  */
-export async function updateProfile(data: { name?: string; profileImage?: string }) {
-  return request('user.updateProfile', data, 'mutation');
+export async function getTasks() {
+  return request('task.getTasks', {}, 'query');
 }
 
 /**
- * Change the current user's password.
- * @param data - An object containing currentPassword and newPassword.
+ * Retrieve a single task by its ID.
+ * Input: { id: string }
  */
-export async function changePassword(data: { currentPassword: string; newPassword: string }) {
-  return request('user.changePassword', data, 'mutation');
+export async function getTask(data: { id: string }) {
+  return request('task.getTask', data, 'query');
 }
 
 /**
- * Log out the current user by clearing the refresh token cookie.
+ * Update a task.
+ * Input: { id: string; title?: string; description?: string; dueDate?: string; priority?: number; status?: string; progress?: number; isArchived?: boolean }
  */
-export async function logout() {
-  return request('user.logout', {}, 'mutation');
+export async function updateTask(data: { id: string; title?: string; description?: string; dueDate?: string; priority?: number; status?: string; progress?: number; isArchived?: boolean }) {
+  return request('task.updateTask', data, 'mutation');
+}
+
+/**
+ * Mark a task as completed.
+ * Input: { id: string }
+ */
+export async function completeTask(data: { id: string }) {
+  return request('task.completeTask', data, 'mutation');
+}
+
+/**
+ * Delete a task.
+ * Input: { id: string }
+ */
+export async function deleteTask(data: { id: string }) {
+  return request('task.deleteTask', data, 'mutation');
 }
 
 export { request as postRequest };

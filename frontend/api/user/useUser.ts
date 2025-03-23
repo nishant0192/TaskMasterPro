@@ -3,13 +3,15 @@ import { getProfile, updateProfile, changePassword, logout } from './user';
 
 /**
  * Hook to fetch the current user's profile.
+ * Accepts an optional options parameter to control query behavior (e.g. disable the query).
  */
-export function useGetProfile(): UseQueryResult<any, Error> {
+export function useGetProfile(options?: { enabled?: boolean }): UseQueryResult<any, Error> {
     return useQuery({
         queryKey: ['profile'],
         queryFn: getProfile,
         staleTime: Infinity,
         refetchOnWindowFocus: true,
+        enabled: options?.enabled !== false, // Enabled by default
     });
 }
 

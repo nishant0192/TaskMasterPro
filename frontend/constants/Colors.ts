@@ -1,26 +1,29 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// constants/Color.ts
 
 export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
+  // Backgrounds
+  PRIMARY_BACKGROUND: "#121212",       // Deep Black
+  SECONDARY_BACKGROUND: "#1E1E1E",       // Dark Charcoal
+  SURFACE: "#242424",                    // For cards and surfaces
+
+  // Text Colors
+  PRIMARY_TEXT: "#E0E0E0",               // Light Gray
+  SECONDARY_TEXT: "#B0B0B0",             // Muted Gray
+
+  // Accents & Buttons
+  ACCENT: "#FF4081",                     // Electric Pink
+  BUTTON: "#FF5722",                     // Vibrant Orange
+
+  // Disabled/Inactive Elements
+  INACTIVE: "#757575",                   // Dim Gray
+  DIVIDER: "#373737",                    // For dividers and subtle borders
+
+  // Feedback Colors
+  ERROR: "#CF6679",                      // Common dark error color
+  SUCCESS: "#4CAF50",                    // Standard success green
+  WARNING: "#FFAB00",                    // Gold/amber for warnings
+  INFO: "#2196F3",                       // Standard info blue
+  LINK: "#82B1FF",                       // Light blue accent for links
 };
+
+export default Colors;
