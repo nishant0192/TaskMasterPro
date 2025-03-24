@@ -132,9 +132,11 @@ const updateTask = protectedProcedure
       isArchived: input.isArchived,
     };
 
-    // If the status is set to "DONE", update the completedAt field.
+    // If the status is "DONE", set progress to 100, mark task as archived, and update completedAt.
     if (input.status === 'DONE') {
       updateData.completedAt = new Date();
+      updateData.progress = 100;
+      updateData.isArchived = true;
     }
 
     const result = await prisma.task.updateMany({
@@ -153,6 +155,7 @@ const updateTask = protectedProcedure
     logger.success(`Task updated: ${input.id}`);
     return { success: true };
   });
+
 
 
 /**
@@ -180,15 +183,17 @@ const completeTask = protectedProcedure
         status: 'DONE',
         progress: 100,
         completedAt: new Date(),
+        isArchived: true,
       },
     });
     if (result.count === 0) {
       logger.error(`Complete task failed: Task ${input.id} not found or unauthorized`);
       throw new Error('Task not found or cannot be updated');
     }
-    logger.success(`Task marked as completed: ${input.id}`);
+    logger.success(`Task marked as completed and archived: ${input.id}`);
     return { success: true };
   });
+
 
 /**
  * Delete a task.

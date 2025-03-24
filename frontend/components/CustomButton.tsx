@@ -1,10 +1,7 @@
-// frontend/components/CustomButton.tsx
-
 import React, { useRef } from 'react';
-import { TouchableWithoutFeedback, Animated, StyleProp, ViewStyle, TextStyle, Text } from 'react-native';
+import { TouchableWithoutFeedback, Animated, StyleProp, ViewStyle, TextStyle, View } from 'react-native';
 import CustomText from './CustomText';
 
-// You can pass tailwind classes via the "className" prop if you're using nativewind
 type CustomButtonProps = {
   title: string;
   onPress: () => void;
@@ -12,6 +9,7 @@ type CustomButtonProps = {
   textStyle?: StyleProp<TextStyle>;
   className?: string;
   activeScale?: number;
+  icon?: React.ReactNode;
 };
 
 const CustomButton: React.FC<CustomButtonProps> = ({
@@ -21,6 +19,7 @@ const CustomButton: React.FC<CustomButtonProps> = ({
   textStyle,
   className,
   activeScale = 0.95,
+  icon,
 }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -42,10 +41,13 @@ const CustomButton: React.FC<CustomButtonProps> = ({
   return (
     <TouchableWithoutFeedback onPressIn={handlePressIn} onPressOut={handlePressOut}>
       <Animated.View
-        style={[{ transform: [{ scale: scaleAnim }] }, style]}
+        style={[{ transform: [{ scale: scaleAnim }], flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }, style]}
         className={className}
       >
-        <CustomText variant={"headingMedium"} style={textStyle}>{title}</CustomText>
+        {icon && <View style={{ marginRight: 8 }}>{icon}</View>}
+        <CustomText variant="headingMedium" style={textStyle}>
+          {title}
+        </CustomText>
       </Animated.View>
     </TouchableWithoutFeedback>
   );

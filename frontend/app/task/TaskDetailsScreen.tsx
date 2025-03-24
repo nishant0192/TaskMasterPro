@@ -16,11 +16,9 @@ import { useGetTaskById, useUpdateTask } from '@/api/task/useTask';
 import { Colors } from '@/constants/Colors';
 import { AntDesign } from '@expo/vector-icons';
 import { useSharedValue } from 'react-native-reanimated';
-// Import Awesome Slider from the react-native-awesome-slider package
 import { Slider as AwesomeSlider } from 'react-native-awesome-slider';
-import * as Haptics from 'expo-haptics';  // Using Expo Haptics
+import * as Haptics from 'expo-haptics';
 
-// Define status options as objects with display labels.
 const statusOptions = [
   { value: 'TODO', label: 'Todo' },
   { value: 'in_progres', label: 'In progress' },
@@ -47,19 +45,16 @@ export default function TaskDetailsScreen() {
   const updateTaskMutation = useUpdateTask();
   const router = useRouter();
 
-  // State for all editable fields.
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [priority, setPriority] = useState('');
   const [status, setStatus] = useState('');
-  // We'll keep progress as a string for display/API call, but also use a shared value for the slider.
   const [progress, setProgress] = useState('0');
   const [isArchived, setIsArchived] = useState<boolean>(false);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [statusDropdownVisible, setStatusDropdownVisible] = useState(false);
 
-  // Create shared values for the slider using Reanimated v2.
   const progressShared = useSharedValue(Number(progress));
   const minValue = useSharedValue(0);
   const maxValue = useSharedValue(100);
@@ -70,14 +65,20 @@ export default function TaskDetailsScreen() {
       setDescription(data.task.description || '');
       setDueDate(data.task.dueDate ? new Date(data.task.dueDate) : undefined);
       setPriority(data.task.priority ? String(data.task.priority) : '');
-      // Convert API status "IN_PROGRESS" to our internal value "in_progres"
       setStatus(data.task.status === 'IN_PROGRESS' ? 'in_progres' : data.task.status || '');
       setProgress(data.task.progress ? String(data.task.progress) : '0');
       setIsArchived(data.task.isArchived);
-      // Update the shared value when data arrives.
       progressShared.value = data.task.progress ? Number(data.task.progress) : 0;
     }
   }, [data]);
+
+  // When status becomes "DONE", ensure the slider shows 100%
+  useEffect(() => {
+    if (status === 'DONE' && Number(progress) !== 100) {
+      setProgress("100");
+      progressShared.value = 100;
+    }
+  }, [status]);
 
   const handleUpdateTask = () => {
     if (!title) {
@@ -85,7 +86,6 @@ export default function TaskDetailsScreen() {
       return;
     }
 
-    // Build the update payload.
     const updateData: any = {
       id,
       title,
@@ -97,7 +97,6 @@ export default function TaskDetailsScreen() {
       isArchived,
     };
 
-    // If the task is marked complete, add the completedAt timestamp.
     if (status === 'DONE') {
       updateData.completedAt = new Date().toISOString();
     }
@@ -116,15 +115,13 @@ export default function TaskDetailsScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: Colors.PRIMARY_BACKGROUND,
-          padding: 24,
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
+      <SafeAreaView style={{
+        flex: 1,
+        backgroundColor: Colors.PRIMARY_BACKGROUND,
+        padding: 24,
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}>
         <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT }}>
           Loading task details...
         </CustomText>
@@ -134,15 +131,13 @@ export default function TaskDetailsScreen() {
 
   if (error) {
     return (
-      <SafeAreaView
-        style={{
-          flex: 1,
-          backgroundColor: Colors.PRIMARY_BACKGROUND,
-          padding: 24,
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
+      <SafeAreaView style={{
+        flex: 1,
+        backgroundColor: Colors.PRIMARY_BACKGROUND,
+        padding: 24,
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}>
         <CustomText variant="headingMedium" style={{ color: Colors.ERROR, textAlign: 'center' }}>
           Error fetching task details: {error.message}
         </CustomText>
@@ -152,10 +147,7 @@ export default function TaskDetailsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.PRIMARY_BACKGROUND, padding: 24, position: 'relative' }}>
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 160 }}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
         {/* Title */}
         <View style={{ marginBottom: 24 }}>
           <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 8 }}>
@@ -314,17 +306,16 @@ export default function TaskDetailsScreen() {
             Progress (%):
           </CustomText>
           <AwesomeSlider
-            style={{ height: 10 }} // Increase slider height to 10
-            containerStyle={{ borderRadius: 8 }} // Set slider container radius to 8
+            style={{ height: 10 }}
+            containerStyle={{ borderRadius: 8 }}
             progress={progressShared}
             minimumValue={minValue}
             maximumValue={maxValue}
-            step={10} // Snap at exactly 10 intervals
+            step={10}
             onValueChange={(value: number) => {
               const snappedValue = Math.round(value / 10) * 10;
               setProgress(String(snappedValue));
               progressShared.value = snappedValue;
-              // Update status based on progress:
               if (snappedValue === 100 && status !== 'DONE') {
                 setStatus('DONE');
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -340,10 +331,10 @@ export default function TaskDetailsScreen() {
               bubbleBackgroundColor: Colors.SECONDARY_BACKGROUND,
             }}
           />
-          <CustomText style={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', marginTop: 8 }} variant={"headingBig"}>
+          <CustomText style={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', marginTop: 8 }} variant="headingBig">
             {progress ? progress : 0}%
           </CustomText>
-          <CustomText style={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', marginTop: 4 }} variant={"headingBig"} >
+          <CustomText style={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', marginTop: 4 }} variant="headingBig">
             {motivatingSentences[Number(progress)] || ""}
           </CustomText>
         </View>
@@ -361,40 +352,19 @@ export default function TaskDetailsScreen() {
           />
         </View>
       </ScrollView>
-      <View
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          borderTopWidth: 1,
-          borderTopColor: Colors.DIVIDER,
-          paddingVertical: 20,
-          paddingHorizontal: 24,
-          backgroundColor: Colors.PRIMARY_BACKGROUND,
-        }}
-      >
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, borderTopWidth: 1, borderTopColor: Colors.DIVIDER, paddingVertical: 20, paddingHorizontal: 24, backgroundColor: Colors.PRIMARY_BACKGROUND }}>
         <CustomButton
           title="Update Task"
           onPress={handleUpdateTask}
-          style={{
-            backgroundColor: Colors.BUTTON,
-            paddingVertical: 12,
-            borderRadius: 8,
-          }}
-          textStyle={{
-            color: Colors.PRIMARY_TEXT,
-            textAlign: 'center',
-            fontWeight: 'bold',
-            fontSize: 20,
-          }}
+          style={{ backgroundColor: Colors.BUTTON, paddingVertical: 12, borderRadius: 8 }}
+          textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold', fontSize: 20 }}
         />
       </View>
       {datePickerVisible && (
         <CustomDatePicker
           date={dueDate || new Date()}
           mode="date"
-          minimumDate={new Date()} // Ensure due date is in the future.
+          minimumDate={new Date()}
           onConfirm={(date: Date) => {
             setDueDate(date);
             setDatePickerVisible(false);
