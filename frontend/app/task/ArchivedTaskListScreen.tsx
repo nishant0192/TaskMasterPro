@@ -3,7 +3,7 @@ import { SafeAreaView, FlatList, TouchableOpacity } from 'react-native';
 import CustomText from '@/components/CustomText';
 import { useTasksStore } from '@/store/tasksStore';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Task } from '@/types/tasks';
 import { useUpdateTask, useGetTasks } from '@/api/task/useTask';
@@ -51,7 +51,7 @@ const ArchivedTaskItem: React.FC<{ task: Task }> = ({ task }) => {
         }
         className="ml-2"
       >
-        <Ionicons name="arrow-up-circle" size={24} color={Colors.PRIMARY_TEXT} />
+        <MaterialIcons name="unarchive" size={24} color={Colors.PRIMARY_TEXT} />
       </TouchableOpacity>
     </TouchableOpacity>
   );
