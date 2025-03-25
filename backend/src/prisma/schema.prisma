@@ -31,8 +31,9 @@ model User {
     resetPasswordToken   String?
     resetPasswordExpires DateTime?
 
-    refreshTokenVersion  Int       @default(0)
-    
+    refreshTokenVersion Int @default(0)
+    expoPushToken         String?
+
     // Relations
     teams         TeamMembership[]
     tasksCreated  Task[]           @relation("tasks_created")
@@ -41,6 +42,7 @@ model User {
     notifications Notification[]
     auditLogs     AuditLog[]
     Team          Team[]
+    Comment       Comment[]
 }
 
 model Team {
@@ -79,30 +81,60 @@ model Task {
     id          String    @id @default(uuid())
     title       String
     description String?
-    status      String    @default("TODO") // e.g., "TODO", "IN_PROGRESS", "DONE"
-    priority    Int? // e.g., scale from 1 (high) to 5 (low)
+    status      String    @default("TODO")
+    priority    Int?
     dueDate     DateTime?
+    reminderAt  DateTime? // NEW: Reminder date
     completedAt DateTime?
     isArchived  Boolean   @default(false)
-    progress    Int? // Percent complete (0-100)
+    progress    Int?
     createdAt   DateTime  @default(now())
     updatedAt   DateTime  @updatedAt
 
     // Relations
-    creator    User    @relation("tasks_created", fields: [creatorId], references: [id])
-    creatorId  String
-    assignee   User?   @relation("tasks_assigned", fields: [assigneeId], references: [id])
-    assigneeId String?
-    team       Team?   @relation(fields: [teamId], references: [id])
-    teamId     String?
-
+    creator       User           @relation("tasks_created", fields: [creatorId], references: [id])
+    creatorId     String
+    assignee      User?          @relation("tasks_assigned", fields: [assigneeId], references: [id])
+    assigneeId    String?
+    team          Team?          @relation(fields: [teamId], references: [id])
+    teamId        String?
     attachments   Attachment[]
     auditLogs     AuditLog[]
     notifications Notification[]
+    subtasks      Subtask[] // NEW relation
+    comments      Comment[] // NEW relation
 
     @@index([teamId])
     @@index([assigneeId])
     @@index([creatorId])
+}
+
+model Subtask {
+    id          String   @id @default(uuid())
+    title       String
+    isCompleted Boolean  @default(false)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    task   Task   @relation(fields: [taskId], references: [id])
+    taskId String
+
+    @@index([taskId])
+}
+
+model Comment {
+    id        String   @id @default(uuid())
+    content   String
+    createdAt DateTime @default(now())
+
+    task   Task   @relation(fields: [taskId], references: [id])
+    taskId String
+
+    author   User   @relation(fields: [authorId], references: [id])
+    authorId String
+
+    @@index([taskId])
+    @@index([authorId])
 }
 
 model Attachment {
