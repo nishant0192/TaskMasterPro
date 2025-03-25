@@ -4,13 +4,7 @@ const API_BASE_URL = process.env.API_BASE_URL || 'http://192.168.29.16:3000';
 
 /**
  * Helper to perform a request to a tRPC endpoint.
- * If method is 'query', it sends a GET request with serialized input;
- * for mutations, it sends a POST request.
- *
- * @param path - The tRPC procedure path (e.g. "task.createTask")
- * @param input - The input data for the mutation/query.
- * @param method - The request method ("mutation" or "query").
- * @returns The parsed JSON response (unwrapped from the tRPC envelope).
+ * For queries, input is serialized into the URL; for mutations, a POST request is sent.
  */
 async function request(
   path: string,
@@ -18,7 +12,6 @@ async function request(
   method: 'mutation' | 'query' = 'mutation'
 ) {
   if (method === 'query') {
-    // Serialize input for GET queries.
     const params = encodeURIComponent(JSON.stringify({ input }));
     const url = `${API_BASE_URL}/trpc/${path}?id=${Date.now()}&params=${params}`;
     const response = await fetchWithAuth(url, {
@@ -32,7 +25,6 @@ async function request(
     }
     return json.result.data;
   } else {
-    // For mutations, send a POST request.
     const body = {
       id: Date.now(),
       method,
@@ -53,51 +45,91 @@ async function request(
   }
 }
 
-/**
- * Create a new task.
- * Input: { title: string; description?: string; dueDate?: string; priority?: number }
- */
-export async function createTask(data: { title: string; description?: string; dueDate?: string; priority?: number }) {
+/* ----- Task Endpoints ----- */
+
+export async function createTask(data: {
+  title: string;
+  description?: string;
+  dueDate?: string;
+  priority?: number;
+}) {
   return request('task.createTask', data, 'mutation');
 }
 
-/**
- * Retrieve all tasks for the current user.
- */
-export async function getTasks() {
-  return request('task.getTasks', {}, 'query');
+export async function getTasks(filters?: {
+  status?: string;
+  priority?: number;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+  search?: string;
+  sortBy?: 'dueDate' | 'priority' | 'createdAt';
+  sortOrder?: 'asc' | 'desc';
+}) {
+  return request('task.getTasks', filters ?? {}, 'query');
 }
 
-/**
- * Retrieve a single task by its ID.
- * Input: { id: string }
- */
 export async function getTask(data: { id: string }) {
   return request('task.getTask', data, 'query');
 }
 
-/**
- * Update a task.
- * Input: { id: string; title?: string; description?: string; dueDate?: string; priority?: number; status?: string; progress?: number; isArchived?: boolean }
- */
-export async function updateTask(data: { id: string; title?: string; description?: string; dueDate?: string; priority?: number; status?: string; progress?: number; isArchived?: boolean }) {
+export async function updateTask(data: {
+  id: string;
+  title?: string;
+  description?: string;
+  dueDate?: string;
+  priority?: number;
+  status?: string;
+  progress?: number;
+  isArchived?: boolean;
+  reminderAt?: string;
+}) {
   return request('task.updateTask', data, 'mutation');
 }
 
-/**
- * Mark a task as completed.
- * Input: { id: string }
- */
 export async function completeTask(data: { id: string }) {
   return request('task.completeTask', data, 'mutation');
 }
 
-/**
- * Delete a task.
- * Input: { id: string }
- */
 export async function deleteTask(data: { id: string }) {
   return request('task.deleteTask', data, 'mutation');
 }
+
+/* ----- Subtask Endpoints ----- */
+
+export async function createSubtask(data: { taskId: string; title: string }) {
+  return request('task.createSubtask', data, 'mutation');
+}
+
+export async function getSubtasks(data: { taskId: string }) {
+  return request('task.getSubtasks', data, 'query');
+}
+
+export async function updateSubtask(data: { id: string; title?: string; isCompleted?: boolean }) {
+  return request('task.updateSubtask', data, 'mutation');
+}
+
+export async function deleteSubtask(data: { id: string }) {
+  return request('task.deleteSubtask', data, 'mutation');
+}
+
+/* ----- Comment Endpoints ----- */
+
+export async function addComment(data: { taskId: string; content: string }) {
+  return request('task.addComment', data, 'mutation');
+}
+
+export async function getComments(data: { taskId: string }) {
+  return request('task.getComments', data, 'query');
+}
+
+/* ----- Search Endpoint ----- */
+
+/**
+ * Search tasks by query.
+ * Input: { query: string }
+ */
+export async function searchTasks(data: { query: string }) {
+  return request('task.searchTasks', { query: data.query }, 'query');
+} 
 
 export { request as postRequest };

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 import { refreshTokens } from '@/api/auth/auth';
 import { getProfile } from '@/api/user/user';
 import { useRouter } from 'expo-router';
+import { Button } from 'react-native-paper';
 
 export default function Index() {
     const [loading, setLoading] = useState(true);
@@ -69,6 +70,7 @@ export default function Index() {
         <SafeAreaView style={{ flex: 1, backgroundColor: '#1F2937' }}>
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                 <Text style={{ color: '#fff', fontSize: 24 }}>Welcome to the App! Please log in.</Text>
+                <Button mode="contained" onPress={() => router.push('/auth/Login')}>Login</Button>
             </View>
         </SafeAreaView>
     );
