@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { router, protectedProcedure } from './context.js';
 import prisma from '../prisma/client.js';
 import { logger } from '../utils/logger.js';
+import { uploadFile } from '../utils/upload.js';
 
-// Helper to unwrap input
+// Helper to unwrap input from nested tRPC envelope.
 const unwrapInput = (val: unknown) => {
   if (!val) return {};
   if (typeof val === 'object' && 'params' in val) {
@@ -13,11 +14,12 @@ const unwrapInput = (val: unknown) => {
   return val;
 };
 
+/* -----------------------------------------------
+   TASK PROCEDURES
+----------------------------------------------- */
+
 /**
  * Create a new task.
- * Required: title.
- * Optional: description, dueDate, priority, subtasks, reminderAt.
- * Defaults: status "TODO", progress 0, isArchived false.
  */
 const createTask = protectedProcedure
   .input(
@@ -63,77 +65,77 @@ const createTask = protectedProcedure
   });
 
 /**
- * Get all tasks for the current user with optional filtering and sorting.
+ * Get all tasks for the current user with optional filtering.
+ * (Now implemented as a mutation.)
  */
-const getTasksInput = z
-  .object({
-    status: z.string().optional(),
-    priority: z.number().optional(),
-    dueDateFrom: z.string().optional(),
-    dueDateTo: z.string().optional(),
-    search: z.string().optional(),
-    sortBy: z.string().optional(),
-    sortOrder: z.enum(['asc', 'desc']).optional(),
-  })
-  .default({});
-
 const getTasks = protectedProcedure
-  .input((input: unknown) => input ?? {}) // Use raw input (default to empty object)
-  .query(async ({ input, ctx }) => {
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        status: z.string().optional(),
+        priority: z.number().optional(),
+        dueDateFrom: z.string().optional(),
+        dueDateTo: z.string().optional(),
+        search: z.string().optional(),
+        sortBy: z.enum(['dueDate', 'priority', 'createdAt']).optional(),
+        sortOrder: z.enum(['asc', 'desc']).optional(),
+      }).default({})
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
     const userId = ctx.user.id;
     logger.debug(`Fetching tasks for user ${ctx.user.email} with filters: ${JSON.stringify(input)}`);
-
-    // Cast input to any
-    const rawInput = input as any;
     const where: any = { creatorId: userId };
 
-    if (rawInput) {
-      if (rawInput.status) where.status = rawInput.status;
-      if (rawInput.priority !== undefined) where.priority = rawInput.priority;
-
-      if (rawInput.dueDateFrom || rawInput.dueDateTo) {
-        where.dueDate = {};
-        if (rawInput.dueDateFrom) where.dueDate.gte = new Date(rawInput.dueDateFrom);
-        if (rawInput.dueDateTo) where.dueDate.lte = new Date(rawInput.dueDateTo);
-      }
-
-      if (rawInput.search) {
-        where.OR = [
-          { title: { contains: rawInput.search, mode: 'insensitive' } },
-          { description: { contains: rawInput.search, mode: 'insensitive' } },
-        ];
-      }
+    if (input.status) where.status = input.status;
+    if (input.priority !== undefined) where.priority = input.priority;
+    if (input.dueDateFrom || input.dueDateTo) {
+      where.dueDate = {};
+      if (input.dueDateFrom) where.dueDate.gte = new Date(input.dueDateFrom);
+      if (input.dueDateTo) where.dueDate.lte = new Date(input.dueDateTo);
+    }
+    if (input.search) {
+      where.OR = [
+        { title: { contains: input.search, mode: 'insensitive' } },
+        { description: { contains: input.search, mode: 'insensitive' } },
+      ];
     }
 
     let orderBy: any = { createdAt: 'desc' };
-    if (rawInput?.sortBy) {
-      orderBy = { [rawInput.sortBy]: rawInput.sortOrder || 'asc' };
+    if (input.sortBy) {
+      orderBy = { [input.sortBy]: input.sortOrder || 'asc' };
     }
 
     const tasks = await prisma.task.findMany({
       where,
       orderBy,
     });
-
+    logger.success(`Fetched ${tasks.length} tasks for user ${ctx.user.email}`);
     return { tasks };
   });
 
-
 /**
  * Get a single task by its ID.
+ * (Now implemented as a mutation.)
  */
 const getTask = protectedProcedure
-  .input((input: unknown) => input) // Accept plain input without validation
-  .query(async ({ input, ctx }) => {
-    // Your procedure logic here
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        id: z.string(),
+      })
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
     const userId = ctx.user.id;
-    const taskId = input; // Assuming input has an 'id' property
+    const taskId = input.id;
     logger.debug(`Fetching task ${taskId} for user ${ctx.user.email}`);
 
-    // Fetch the task from your database
     const task = await prisma.task.findFirst({
       where: {
-        id: taskId!,
+        id: taskId,
         creatorId: userId,
       },
     });
@@ -147,7 +149,6 @@ const getTask = protectedProcedure
 
 /**
  * Update a task.
- * Allows updating title, description, dueDate, priority, status, progress, isArchived, and reminderAt.
  */
 const updateTask = protectedProcedure
   .input(
@@ -201,7 +202,6 @@ const updateTask = protectedProcedure
 
 /**
  * Mark a task as completed.
- * Sets status to "DONE", progress to 100, completedAt to current time, and archives the task.
  */
 const completeTask = protectedProcedure
   .input(
@@ -258,6 +258,10 @@ const deleteTask = protectedProcedure
     return { success: true };
   });
 
+/* -----------------------------------------------
+   SUBTASK PROCEDURES
+----------------------------------------------- */
+
 /**
  * Create a subtask for a given task.
  */
@@ -268,6 +272,11 @@ const createSubtask = protectedProcedure
       z.object({
         taskId: z.string(),
         title: z.string().min(1, "Subtask title is required"),
+        order: z.number().optional(),
+        reminderAt: z.preprocess(
+          (val) => (typeof val === 'string' ? new Date(val) : val),
+          z.date().optional()
+        ),
       })
     )
   )
@@ -275,6 +284,8 @@ const createSubtask = protectedProcedure
     const subtask = await prisma.subtask.create({
       data: {
         title: input.title,
+        order: input.order,
+        reminderAt: input.reminderAt,
         task: { connect: { id: input.taskId } },
       },
     });
@@ -284,6 +295,7 @@ const createSubtask = protectedProcedure
 
 /**
  * Get all subtasks for a given task.
+ * (Now using a mutation.)
  */
 const getSubtasks = protectedProcedure
   .input(
@@ -294,10 +306,10 @@ const getSubtasks = protectedProcedure
       })
     )
   )
-  .query(async ({ input, ctx }) => {
+  .mutation(async ({ input, ctx }) => {
     const subtasks = await prisma.subtask.findMany({
       where: { taskId: input.taskId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { order: 'asc' },
     });
     return { subtasks };
   });
@@ -313,6 +325,11 @@ const updateSubtask = protectedProcedure
         id: z.string(),
         title: z.string().optional(),
         isCompleted: z.boolean().optional(),
+        order: z.number().optional(),
+        reminderAt: z.preprocess(
+          (val) => (typeof val === 'string' ? new Date(val) : val),
+          z.date().optional()
+        ),
       })
     )
   )
@@ -322,6 +339,8 @@ const updateSubtask = protectedProcedure
       data: {
         title: input.title,
         isCompleted: input.isCompleted,
+        order: input.order,
+        reminderAt: input.reminderAt,
       },
     });
     logger.success(`Subtask updated: ${result.id}`);
@@ -347,6 +366,11 @@ const deleteSubtask = protectedProcedure
     logger.success(`Subtask deleted: ${input.id}`);
     return { success: true };
   });
+
+
+/* -----------------------------------------------
+   REMINDER PROCEDURE
+----------------------------------------------- */
 
 /**
  * Set or update a task's reminder.
@@ -378,8 +402,13 @@ const setReminder = protectedProcedure
     return { success: true };
   });
 
+/* -----------------------------------------------
+   SEARCH PROCEDURE
+----------------------------------------------- */
+
 /**
- * Search tasks by keyword.
+ * Search tasks by keyword in title or description.
+ * (Converted to mutation.)
  */
 const searchTasks = protectedProcedure
   .input(
@@ -390,7 +419,7 @@ const searchTasks = protectedProcedure
       })
     )
   )
-  .query(async ({ input, ctx }) => {
+  .mutation(async ({ input, ctx }) => {
     const userId = ctx.user.id;
     const tasks = await prisma.task.findMany({
       where: {
@@ -404,6 +433,10 @@ const searchTasks = protectedProcedure
     });
     return { tasks };
   });
+
+/* -----------------------------------------------
+   COMMENT PROCEDURES
+----------------------------------------------- */
 
 /**
  * Add a comment to a task.
@@ -433,6 +466,7 @@ const addComment = protectedProcedure
 
 /**
  * Get comments for a task.
+ * (Converted to mutation.)
  */
 const getComments = protectedProcedure
   .input(
@@ -443,7 +477,7 @@ const getComments = protectedProcedure
       })
     )
   )
-  .query(async ({ input, ctx }) => {
+  .mutation(async ({ input, ctx }) => {
     const comments = await prisma.comment.findMany({
       where: { taskId: input.taskId },
       orderBy: { createdAt: 'asc' },
@@ -452,8 +486,13 @@ const getComments = protectedProcedure
     return { comments };
   });
 
+/* -----------------------------------------------
+   ACTIVITY LOG PROCEDURE
+----------------------------------------------- */
+
 /**
- * Get activity logs for a task.
+ * Get audit logs (activity) for a task.
+ * (Converted to mutation.)
  */
 const getTaskActivity = protectedProcedure
   .input(
@@ -464,15 +503,96 @@ const getTaskActivity = protectedProcedure
       })
     )
   )
-  .query(async ({ input, ctx }) => {
+  .mutation(async ({ input, ctx }) => {
     const logs = await prisma.auditLog.findMany({
-      where: {
-        taskId: input.taskId,
-      },
+      where: { taskId: input.taskId },
       orderBy: { timestamp: 'desc' },
     });
     return { logs };
   });
+
+/* -----------------------------------------------
+   ATTACHMENT PROCEDURES
+----------------------------------------------- */
+
+/**
+ * Create a new attachment for a task.
+ */
+const createAttachment = protectedProcedure
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        taskId: z.string(),
+        fileName: z.string(),
+        fileType: z.string().optional(),
+        fileSize: z.number().optional(),
+        fileData: z.string().min(1, "File data is required"),
+      })
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
+    logger.debug(`Creating attachment for task ${input.taskId}: ${input.fileName}`);
+    const fileBuffer = Buffer.from(input.fileData, 'base64');
+    const fileUrl = await uploadFile(fileBuffer, input.fileName);
+    const attachment = await prisma.attachment.create({
+      data: {
+        fileName: input.fileName,
+        fileType: input.fileType,
+        fileSize: input.fileSize,
+        fileUrl,
+        task: { connect: { id: input.taskId } },
+        uploadedBy: { connect: { id: ctx.user.id } },
+      },
+    });
+    logger.success(`Attachment created for task ${input.taskId}: ${fileUrl}`);
+    return { attachment };
+  });
+
+/**
+ * Get all attachments for a given task.
+ * (Converted to mutation.)
+ */
+const getAttachments = protectedProcedure
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        taskId: z.string(),
+      })
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
+    const attachments = await prisma.attachment.findMany({
+      where: { taskId: input.taskId },
+      orderBy: { uploadedAt: 'asc' },
+    });
+    return { attachments };
+  });
+
+/**
+ * Delete an attachment.
+ */
+const deleteAttachment = protectedProcedure
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        id: z.string(),
+      })
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
+    const result = await prisma.attachment.delete({
+      where: { id: input.id },
+    });
+    logger.success(`Attachment deleted: ${input.id}`);
+    return { success: true };
+  });
+
+/* -----------------------------------------------
+   EXPORT ROUTER
+----------------------------------------------- */
 
 export const taskRouter = router({
   createTask,
@@ -490,6 +610,9 @@ export const taskRouter = router({
   addComment,
   getComments,
   getTaskActivity,
+  createAttachment,
+  getAttachments,
+  deleteAttachment,
 });
 
 export default taskRouter;

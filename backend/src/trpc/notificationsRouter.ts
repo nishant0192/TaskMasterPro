@@ -1,21 +1,29 @@
 // src/trpc/notificationsRouter.ts
-import { Expo } from 'expo-server-sdk';
 import { z } from 'zod';
 import { router, protectedProcedure } from './context.js';
 import prisma from '../prisma/client.js';
 import { logger } from '../utils/logger.js';
 
-// Create a new Expo SDK client
-let expo = new Expo();
+// -------------------- Helper --------------------
+const unwrapInput = (val: unknown) => {
+  if (!val) return {};
+  if (typeof val === 'object' && 'params' in val) {
+    return (val as any).params.input ?? {};
+  }
+  return val;
+};
 
 // -------------------- Push Token Endpoints --------------------
 
 // Endpoint to register/update the Expo push token for the current user.
 const registerPushToken = protectedProcedure
   .input(
-    z.object({
-      expoPushToken: z.string().min(1, "Expo push token is required"),
-    })
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        expoPushToken: z.string().min(1, "Expo push token is required"),
+      })
+    )
   )
   .mutation(async ({ input, ctx }) => {
     const userId = ctx.user.id;
@@ -38,41 +46,49 @@ const clearPushToken = protectedProcedure.mutation(async ({ ctx }) => {
   return { success: true, user: updatedUser };
 });
 
-// Endpoint to send a test notification using the Expo Server SDK.
+// -------------------- Notification Sending --------------------
+
+// Endpoint to send a test notification using the HTTP/2 API.
 const sendTestNotification = protectedProcedure
   .input(
-    z.object({
-      message: z.string().optional(),
-    })
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        message: z.string().optional(),
+      })
+    )
   )
   .mutation(async ({ input, ctx }) => {
+    // Find the user and their registered Expo push token.
     const user = await prisma.user.findUnique({ where: { id: ctx.user.id } });
     if (!user || !user.expoPushToken) {
       throw new Error("User does not have a registered push token.");
     }
-    if (!Expo.isExpoPushToken(user.expoPushToken)) {
-      throw new Error("Invalid Expo push token.");
-    }
-
-    // Prepare the message
-    let messages = [];
-    messages.push({
-      to: user.expoPushToken,
+    const token = user.expoPushToken;
+    // Prepare the push notification message.
+    const messagePayload = {
+      to: token,
       sound: 'default',
       title: 'Test Notification',
       body: input.message || "This is a test notification!",
       data: { test: true },
+    };
+
+    // Send a POST request directly to the HTTP/2 API endpoint.
+    const response = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        "host": "exp.host",
+        "accept": "application/json",
+        "accept-encoding": "gzip, deflate",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(messagePayload),
     });
 
-    // The Expo push notification service accepts batches. Chunk the messages.
-    let chunks = expo.chunkPushNotifications(messages);
-    let tickets = [];
-    for (let chunk of chunks) {
-      let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-      tickets.push(...ticketChunk);
-    }
+    const dataResp = await response.json();
     logger.success(`Test notification sent to ${user.email}`);
-    return { success: true, tickets };
+    return { success: true, response: dataResp };
   });
 
 // -------------------- Export Router --------------------

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, UseQueryResult, UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQueryClient, UseMutationResult } from '@tanstack/react-query';
 import {
   createTask,
   getTasks,
@@ -10,18 +10,29 @@ import {
   getSubtasks,
   updateSubtask,
   deleteSubtask,
+  setReminder,
+  searchTasks,
   addComment,
   getComments,
-  searchTasks,
+  getTaskActivity,
+  createAttachment,
+  getAttachments,
+  deleteAttachment,
 } from './task';
 
-/**
- * Hook to create a new task.
- */
+/* ----- Task Hooks ----- */
+
 export function useCreateTask(): UseMutationResult<
   any,
   Error,
-  { title: string; description?: string; dueDate?: string; priority?: number },
+  {
+    title: string;
+    description?: string;
+    dueDate?: string;
+    priority?: number;
+    reminderAt?: string;
+    subtasks?: { title: string }[];
+  },
   unknown
 > {
   const queryClient = useQueryClient();
@@ -33,9 +44,6 @@ export function useCreateTask(): UseMutationResult<
   });
 }
 
-/**
- * Hook to fetch all tasks with optional filtering.
- */
 export function useGetTasks(filters?: {
   status?: string;
   priority?: number;
@@ -44,32 +52,16 @@ export function useGetTasks(filters?: {
   search?: string;
   sortBy?: 'dueDate' | 'priority' | 'createdAt';
   sortOrder?: 'asc' | 'desc';
-}): UseQueryResult<any, Error> {
-  return useQuery({
-    queryKey: ['tasks', filters],
-    queryFn: () => getTasks(filters),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
+}): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({ mutationFn: () => getTasks(filters) });
+}
+
+export function useGetTaskById(id: string): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({
+    mutationFn: () => getTask({ id })
   });
 }
 
-/**
- * Hook to fetch a single task by its ID.
- */
-export function useGetTaskById(id: string): UseQueryResult<any, Error> {
-  return useQuery({
-    queryKey: ['task', id],
-    queryFn: () => getTask({ id }),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-}
-
-/**
- * Hook to update a task with optimistic updates.
- */
 export function useUpdateTask(): UseMutationResult<
   any,
   Error,
@@ -112,9 +104,6 @@ export function useUpdateTask(): UseMutationResult<
   });
 }
 
-/**
- * Hook to mark a task as completed.
- */
 export function useCompleteTask(): UseMutationResult<
   any,
   Error,
@@ -149,9 +138,6 @@ export function useCompleteTask(): UseMutationResult<
   });
 }
 
-/**
- * Hook to delete a task.
- */
 export function useDeleteTask(): UseMutationResult<
   any,
   Error,
@@ -187,7 +173,7 @@ export function useDeleteTask(): UseMutationResult<
 export function useCreateSubtask(): UseMutationResult<
   any,
   Error,
-  { taskId: string; title: string },
+  { taskId: string; title: string; order?: number; reminderAt?: string },
   unknown
 > {
   const queryClient = useQueryClient();
@@ -200,20 +186,16 @@ export function useCreateSubtask(): UseMutationResult<
   });
 }
 
-export function useGetSubtasks(taskId: string): UseQueryResult<any, Error> {
-  return useQuery({
-    queryKey: ['subtasks', taskId],
-    queryFn: () => getSubtasks({ taskId }),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
+export function useGetSubtasks(taskId: string): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({
+    mutationFn: () => getSubtasks({ taskId })
   });
 }
 
 export function useUpdateSubtask(): UseMutationResult<
   any,
   Error,
-  { id: string; title?: string; isCompleted?: boolean },
+  { id: string; title?: string; isCompleted?: boolean; order?: number; reminderAt?: string },
   unknown
 > {
   const queryClient = useQueryClient();
@@ -257,24 +239,69 @@ export function useAddComment(): UseMutationResult<
   });
 }
 
-export function useGetComments(taskId: string): UseQueryResult<any, Error> {
-  return useQuery({
-    queryKey: ['comments', taskId],
-    queryFn: () => getComments({ taskId }),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
+export function useGetComments(taskId: string): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({
+    mutationFn: () => getComments({ taskId })
   });
 }
 
 /* ----- Search Hook ----- */
 
-export function useSearchTasks(query: string): UseQueryResult<any, Error> {
-  return useQuery({
-    queryKey: ['searchTasks', query],
-    queryFn: () => searchTasks({ query }),
-    enabled: Boolean(query),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+export function useSearchTasks(query: string): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({
+    mutationFn: () => searchTasks({ query })
+  });
+}
+
+/* ----- Attachment Hooks ----- */
+
+export function useCreateAttachment(): UseMutationResult<
+  any,
+  Error,
+  {
+    taskId: string;
+    fileName: string;
+    fileType?: string;
+    fileSize?: number;
+    fileData: string;
+  },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data) => createAttachment(data),
+    onSuccess: (_, data) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['attachments', data.taskId] });
+    },
+  });
+}
+
+export function useGetAttachments(taskId: string): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({
+    mutationFn: () => getAttachments({ taskId })
+  });
+}
+
+export function useDeleteAttachment(): UseMutationResult<
+  any,
+  Error,
+  { id: string },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data) => deleteAttachment(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['attachments'] });
+    },
+  });
+}
+
+/* ----- Activity Log Hook ----- */
+
+export function useGetTaskActivity(taskId: string): UseMutationResult<any, Error, void, unknown> {
+  return useMutation({
+    mutationFn: () => getTaskActivity({ taskId })
   });
 }

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "530332293717",
+    "project_id": "taskmasterpro-5c18b",
+    "storage_bucket": "taskmasterpro-5c18b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:530332293717:android:1333370f23f2f8f21912dc",
+        "android_client_info": {
+          "package_name": "com.frontend.nishant0016"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYahrzfXhE2N4MtSwLpzDvpn37EEU5TO4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:530332293717:android:14c4a757c4e48b541912dc",
+        "android_client_info": {
+          "package_name": "com.nishant0016.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYahrzfXhE2N4MtSwLpzDvpn37EEU5TO4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

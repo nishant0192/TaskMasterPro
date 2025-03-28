@@ -129,20 +129,21 @@ export default function TaskListScreen() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [statusDropdownVisible, setStatusDropdownVisible] = useState(false);
+  const [triggerFetch, setTriggerFetch] = useState(0); // Alternative refetch trigger
   const multiSelect = selectedTasks.length > 0;
-  const { data, isLoading, error, refetch } = useGetTasks({ search, status: filterStatus });
+  const getTasksMutation = useGetTasks({ search, status: filterStatus });
   const updateTaskMutation = useUpdateTask();
   const deleteTaskMutation = useDeleteTask();
 
   useEffect(() => {
-    if (data?.tasks) {
-      setTasks(data.tasks);
-    }
-  }, [data, setTasks]);
-
-  useEffect(() => {
-    refetch();
-  }, [search, filterStatus]);
+    getTasksMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        if (data?.tasks) {
+          setTasks(data.tasks);
+        }
+      },
+    });
+  }, [search, filterStatus, triggerFetch]);
 
   const toggleSelectTask = (id: string) => {
     setSelectedTasks(prev =>
@@ -159,7 +160,7 @@ export default function TaskListScreen() {
     });
     setSelectedTasks([]);
     setMoreModalVisible(false);
-    refetch();
+    setTriggerFetch(prev => prev + 1);
   };
 
   const deleteSelected = async () => {
@@ -168,7 +169,7 @@ export default function TaskListScreen() {
     });
     setSelectedTasks([]);
     setMoreModalVisible(false);
-    refetch();
+    setTriggerFetch(prev => prev + 1);
   };
 
   const archiveSelected = async () => {
@@ -177,7 +178,7 @@ export default function TaskListScreen() {
     });
     setSelectedTasks([]);
     setMoreModalVisible(false);
-    refetch();
+    setTriggerFetch(prev => prev + 1);
   };
 
   return (
@@ -268,7 +269,7 @@ export default function TaskListScreen() {
             isSelected={selectedTasks.includes(item.id)}
             multiSelect={multiSelect}
             onToggleSelect={toggleSelectTask}
-            onActionComplete={() => refetch()}
+            onActionComplete={() => setTriggerFetch(prev => prev + 1)}
           />
         )}
         contentContainerStyle={{ paddingTop: 16, padding: 16, paddingBottom: 120 }}

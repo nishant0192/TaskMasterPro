@@ -24,6 +24,7 @@
         "@trpc/server": "^10.45.2",
         "bcrypt": "^5.1.1",
         "chalk": "4.0.0",
+        "cloudinary": "^2.6.0",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",
         "dotenv": "^16.4.7",
@@ -32,6 +33,7 @@
         "express": "^4.21.2",
         "jsonwebtoken": "^9.0.2",
         "module-alias": "^2.2.3",
+        "streamifier": "^0.1.1",
         "uuid": "^11.1.0",
         "zod": "^3.24.2"
     },
@@ -42,6 +44,7 @@
         "@types/express": "^5.0.1",
         "@types/jsonwebtoken": "^9.0.9",
         "@types/node": "^22.13.11",
+        "@types/streamifier": "^0.1.2",
         "cross-env": "^7.0.3",
         "prisma": "^6.5.0",
         "ts-node": "^10.9.2",
