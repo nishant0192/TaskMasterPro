@@ -1,3 +1,4 @@
+// TaskListScreen.tsx
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView, FlatList, TouchableOpacity, Modal, View } from 'react-native';
 import CustomText from '@/components/CustomText';
@@ -48,15 +49,15 @@ const TaskItem: React.FC<{
     },
     ...(task.status !== 'DONE'
       ? [
-          {
-            title: 'Complete',
-            icon: <MaterialIcons name="done-all" size={18} color={Colors.PRIMARY_TEXT} />,
-            action: () => {
-              setMenuVisible(false);
-              updateTaskMutation.mutate({ id: task.id, status: 'DONE' }, { onSuccess: onActionComplete });
-            },
+        {
+          title: 'Complete',
+          icon: <MaterialIcons name="done-all" size={18} color={Colors.PRIMARY_TEXT} />,
+          action: () => {
+            setMenuVisible(false);
+            updateTaskMutation.mutate({ id: task.id, status: 'DONE' }, { onSuccess: onActionComplete });
           },
-        ]
+        },
+      ]
       : []),
     {
       title: 'Delete',
@@ -129,28 +130,13 @@ export default function TaskListScreen() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [statusDropdownVisible, setStatusDropdownVisible] = useState(false);
-  const [triggerFetch, setTriggerFetch] = useState(0); // Alternative refetch trigger
+  const [triggerFetch, setTriggerFetch] = useState(0);
   const multiSelect = selectedTasks.length > 0;
   const getTasksMutation = useGetTasks({ search, status: filterStatus });
   const updateTaskMutation = useUpdateTask();
   const deleteTaskMutation = useDeleteTask();
 
-  useEffect(() => {
-    getTasksMutation.mutate(undefined, {
-      onSuccess: (data) => {
-        if (data?.tasks) {
-          setTasks(data.tasks);
-        }
-      },
-    });
-  }, [search, filterStatus, triggerFetch]);
-
-  const toggleSelectTask = (id: string) => {
-    setSelectedTasks(prev =>
-      prev.includes(id) ? prev.filter(taskId => taskId !== id) : [...prev, id]
-    );
-  };
-
+  // Multi-select action handlers.
   const completeSelected = async () => {
     selectedTasks.forEach(id => {
       const task = tasks.find(t => t.id === id);
@@ -181,9 +167,24 @@ export default function TaskListScreen() {
     setTriggerFetch(prev => prev + 1);
   };
 
+  useEffect(() => {
+    getTasksMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        if (data?.tasks) {
+          setTasks(data.tasks);
+        }
+      },
+    });
+  }, [search, filterStatus, triggerFetch]);
+
+  const toggleSelectTask = (id: string) => {
+    setSelectedTasks(prev =>
+      prev.includes(id) ? prev.filter(taskId => taskId !== id) : [...prev, id]
+    );
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-[#121212] relative">
-      {/* Header with Search and Filter */}
+    <SafeAreaView className="flex-1" style={{ backgroundColor: Colors.PRIMARY_BACKGROUND }}>
       <View className="p-4">
         <StyledInput
           mode="outlined"
@@ -199,10 +200,19 @@ export default function TaskListScreen() {
             neutralBorderColor: Colors.DIVIDER,
           }}
         />
+        {/* Button to view archived tasks using CustomButton */}
+        <CustomButton
+          title="View Archived Tasks"
+          onPress={() => router.push('/task/ArchivedTaskListScreen')}
+          className="mt-4 py-3 px-4 rounded"
+          style={{ backgroundColor: Colors.BUTTON }}
+          textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center' }}
+          icon={<MaterialIcons name="archive" size={20} color={Colors.PRIMARY_TEXT} />}
+        />
         <TouchableOpacity
           onPress={() => setStatusDropdownVisible(prev => !prev)}
-          className="mt-4 p-3 border border-gray-600 rounded flex-row items-center justify-between"
-          style={{ backgroundColor: Colors.SECONDARY_BACKGROUND }}
+          className="mt-4 p-3 border rounded flex-row items-center justify-between"
+          style={{ backgroundColor: Colors.SECONDARY_BACKGROUND, borderColor: Colors.DIVIDER }}
         >
           <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
             {filterStatus ? (statusOptions.find(option => option.value === filterStatus)?.label || filterStatus) : 'All Statuses'}
@@ -211,8 +221,8 @@ export default function TaskListScreen() {
         </TouchableOpacity>
         {statusDropdownVisible && (
           <View
-            className="mt-2 border border-gray-600 rounded"
-            style={{ backgroundColor: Colors.SECONDARY_BACKGROUND }}
+            className="mt-2 border rounded"
+            style={{ backgroundColor: Colors.SECONDARY_BACKGROUND, borderColor: Colors.DIVIDER }}
           >
             {statusOptions.map(option => (
               <TouchableOpacity
@@ -232,36 +242,37 @@ export default function TaskListScreen() {
         )}
       </View>
 
-      {/* Multi-select Options Bar */}
       {multiSelect && (
-        <View className="flex-row justify-around p-4 bg-transparent">
+        <View className="flex-row justify-around p-4 mt-4 mb-[-20px]">
           <CustomButton
             title="Select All"
             onPress={() =>
               setSelectedTasks(tasks.filter(task => !task.isArchived).map(task => task.id))
             }
-            className="py-2 px-4 rounded bg-blue-500"
+            className="py-2 px-4 rounded"
+            style={{ backgroundColor: Colors.BUTTON }}
             textStyle={{ color: Colors.PRIMARY_TEXT }}
           />
           <CustomButton
             title="Deselect All"
             onPress={() => setSelectedTasks([])}
-            className="py-2 px-4 rounded bg-blue-500"
+            className="py-2 px-4 rounded"
+            style={{ backgroundColor: Colors.BUTTON }}
             textStyle={{ color: Colors.PRIMARY_TEXT }}
           />
           <CustomButton
             title="More"
             onPress={() => setMoreModalVisible(true)}
-            className="py-2 px-4 rounded bg-blue-500"
+            className="py-2 px-4 rounded"
+            style={{ backgroundColor: Colors.BUTTON }}
             textStyle={{ color: Colors.PRIMARY_TEXT }}
             icon={<MaterialIcons name="more-vert" size={20} color={Colors.PRIMARY_TEXT} />}
           />
         </View>
       )}
 
-      {/* Task List */}
       <FlatList
-        data={tasks.filter(task => !task.isArchived)}
+        data={tasks.filter((task: Task) => !task.isArchived)}
         keyExtractor={(item: Task) => item.id}
         renderItem={({ item }) => (
           <TaskItem
@@ -272,15 +283,13 @@ export default function TaskListScreen() {
             onActionComplete={() => setTriggerFetch(prev => prev + 1)}
           />
         )}
-        contentContainerStyle={{ paddingTop: 16, padding: 16, paddingBottom: 120 }}
+        contentContainerStyle={{ paddingTop: 16, paddingHorizontal: 16, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Sticky Footer: Create Task Button */}
       <View
-        className="absolute bottom-4 w-full border-t border-gray-600 py-8 px-6"
+        className="absolute bottom-4 w-full"
         style={{
-          position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
@@ -294,39 +303,39 @@ export default function TaskListScreen() {
         <CustomButton
           title="Create Task"
           onPress={() => router.push('/task/CreateTaskScreen')}
-          className="py-3 px-6 rounded bg-orange-500"
+          className="py-3 px-6 rounded"
+          style={{ backgroundColor: Colors.BUTTON }}
           textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold', fontSize: 20 }}
         />
       </View>
 
-      {/* Modal for More Options in Multi-Select */}
       <Modal visible={moreModalVisible} transparent animationType="fade" onRequestClose={() => setMoreModalVisible(false)}>
         <TouchableOpacity className="flex-1 justify-center items-center bg-black/50" onPress={() => setMoreModalVisible(false)}>
           <View className="bg-black p-4 rounded w-4/5">
-            <TouchableOpacity onPress={completeSelected} className="py-2 px-4 rounded bg-indigo-500 mt-2 flex-row items-center">
-              <View style={{ width: 30, alignItems: 'center' }}>
-                <MaterialIcons name="done-all" size={18} color={Colors.PRIMARY_TEXT} />
-              </View>
-              <CustomText variant="headingMedium" className="text-white ml-2">
-                Complete Selected
-              </CustomText>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={deleteSelected} className="py-2 px-4 rounded bg-indigo-500 mt-2 flex-row items-center">
-              <View style={{ width: 30, alignItems: 'center' }}>
-                <MaterialIcons name="delete" size={18} color={Colors.PRIMARY_TEXT} />
-              </View>
-              <CustomText variant="headingMedium" className="text-white ml-2">
-                Delete Selected
-              </CustomText>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={archiveSelected} className="py-2 px-4 rounded bg-indigo-500 mt-2 flex-row items-center">
-              <View style={{ width: 30, alignItems: 'center' }}>
-                <MaterialIcons name="archive" size={18} color={Colors.PRIMARY_TEXT} />
-              </View>
-              <CustomText variant="headingMedium" className="text-white ml-2">
-                Archive Selected
-              </CustomText>
-            </TouchableOpacity>
+            <CustomButton
+              title="Complete Selected"
+              onPress={completeSelected}
+              className="py-2 px-4 rounded mt-2 flex-row items-center"
+              style={{ backgroundColor: Colors.BUTTON }}
+              textStyle={{ color: Colors.PRIMARY_TEXT }}
+              icon={<MaterialIcons name="done-all" size={18} color={Colors.PRIMARY_TEXT} />}
+            />
+            <CustomButton
+              title="Delete Selected"
+              onPress={deleteSelected}
+              className="py-2 px-4 rounded mt-2 flex-row items-center"
+              style={{ backgroundColor: Colors.BUTTON }}
+              textStyle={{ color: Colors.PRIMARY_TEXT }}
+              icon={<MaterialIcons name="delete" size={18} color={Colors.PRIMARY_TEXT} />}
+            />
+            <CustomButton
+              title="Archive Selected"
+              onPress={archiveSelected}
+              className="py-2 px-4 rounded mt-2 flex-row items-center"
+              style={{ backgroundColor: Colors.BUTTON }}
+              textStyle={{ color: Colors.PRIMARY_TEXT }}
+              icon={<MaterialIcons name="archive" size={18} color={Colors.PRIMARY_TEXT} />}
+            />
           </View>
         </TouchableOpacity>
       </Modal>

@@ -1,3 +1,4 @@
+// ArchivedTaskListScreen.tsx
 import React from 'react';
 import { SafeAreaView, FlatList, TouchableOpacity } from 'react-native';
 import CustomText from '@/components/CustomText';
@@ -6,12 +7,11 @@ import { useRouter } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Task } from '@/types/tasks';
-import { useUpdateTask, useGetTasks } from '@/api/task/useTask';
+import { useUpdateTask } from '@/api/task/useTask';
 
 const ArchivedTaskItem: React.FC<{ task: Task }> = ({ task }) => {
   const router = useRouter();
   const updateTaskMutation = useUpdateTask();
-  const { refetch } = useGetTasks();
 
   return (
     <TouchableOpacity
@@ -41,13 +41,10 @@ const ArchivedTaskItem: React.FC<{ task: Task }> = ({ task }) => {
           </CustomText>
         )}
       </TouchableOpacity>
-      {/* Unarchive button: calls API and refreshes */}
+      {/* Unarchive button: calls mutation */}
       <TouchableOpacity
         onPress={() =>
-          updateTaskMutation.mutate(
-            { id: task.id, isArchived: false },
-            { onSuccess: () => refetch() }
-          )
+          updateTaskMutation.mutate({ id: task.id, isArchived: false })
         }
         className="ml-2"
       >
@@ -59,13 +56,14 @@ const ArchivedTaskItem: React.FC<{ task: Task }> = ({ task }) => {
 
 export default function ArchivedTaskListScreen() {
   const { tasks } = useTasksStore();
-  const archivedTasks = tasks.filter(task => task.isArchived);
+  // Filter tasks that are archived.
+  const archivedTasks = tasks.filter((task: Task) => task.isArchived);
   const router = useRouter();
 
   return (
     <SafeAreaView className="flex-1 bg-[#121212] relative">
       <TouchableOpacity
-        onPress={() => router.push('/task/TaskListScreen')}
+        onPress={() => router.replace('/task/TaskListScreen')}
         className="p-4 m-4 rounded flex-row items-center bg-[#1E1E1E] border border-gray-600"
       >
         <Ionicons name="arrow-back" size={24} color={Colors.PRIMARY_TEXT} />

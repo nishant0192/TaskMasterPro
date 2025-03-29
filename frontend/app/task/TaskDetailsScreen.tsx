@@ -421,8 +421,8 @@ export default function TaskDetailsScreen() {
     deleteType === 'subtask'
       ? 'Are you sure you want to delete this subtask?'
       : deleteType === 'attachment'
-      ? 'Are you sure you want to delete this attachment?'
-      : '';
+        ? 'Are you sure you want to delete this attachment?'
+        : '';
 
   if (getTaskByIdMutation.isPending) {
     return (
@@ -739,148 +739,148 @@ export default function TaskDetailsScreen() {
         />
       )}
 
-      
+
       {/* Edit Subtask Modal */}
       <View>
-      {editingSubtask && (
-        <Modal transparent animationType="fade" visible={!!editingSubtask} onRequestClose={() => setEditingSubtask(null)}>
-          <View style={styles.editModalOverlay}>
-            <View style={styles.editModalContainer}>
-              <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
-                Edit Subtask
-              </CustomText>
-              <StyledInput
-                mode="outlined"
-                labelText="Subtask Title"
-                value={editSubtaskText}
-                onChangeText={setEditSubtaskText}
-                placeholder="Edit subtask"
-                keyboardType="default"
-                colors={{
-                  backgroundColor: Colors.SECONDARY_BACKGROUND,
-                  textColor: Colors.PRIMARY_TEXT,
-                  placeholderTextColor: Colors.SECONDARY_TEXT,
-                  neutralBorderColor: Colors.DIVIDER,
-                }}
-                style={{ marginBottom: 10 }}
-              />
-              <TouchableOpacity
-                onPress={() => setShowEditSubtaskDatePicker(true)}
-                style={styles.inputTouchable}
-              >
-                <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-                  {editSubtaskReminder ? `Reminder: ${editSubtaskReminder.toLocaleString()}` : 'Set Reminder'}
+        {editingSubtask && (
+          <Modal transparent animationType="fade" visible={!!editingSubtask} onRequestClose={() => setEditingSubtask(null)}>
+            <View style={styles.editModalOverlay}>
+              <View style={styles.editModalContainer}>
+                <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
+                  Edit Subtask
                 </CustomText>
-                <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
-              </TouchableOpacity>
-              {showEditSubtaskDatePicker && (
-                <CustomDatePicker
-                  visible={showEditSubtaskDatePicker}
-                  date={editSubtaskReminder || new Date()}
-                  mode="datetime"
-                  minimumDate={new Date()}
-                  onConfirm={(date: Date) => {
-                    setEditSubtaskReminder(date);
-                    setShowEditSubtaskDatePicker(false);
+                <StyledInput
+                  mode="outlined"
+                  labelText="Subtask Title"
+                  value={editSubtaskText}
+                  onChangeText={setEditSubtaskText}
+                  placeholder="Edit subtask"
+                  keyboardType="default"
+                  colors={{
+                    backgroundColor: Colors.SECONDARY_BACKGROUND,
+                    textColor: Colors.PRIMARY_TEXT,
+                    placeholderTextColor: Colors.SECONDARY_TEXT,
+                    neutralBorderColor: Colors.DIVIDER,
                   }}
-                  onCancel={() => setShowEditSubtaskDatePicker(false)}
+                  style={{ marginBottom: 10 }}
                 />
-              )}
-              <View style={styles.editModalButtonRow}>
-                <CustomButton
-                  title="Cancel"
-                  onPress={() => {
-                    setEditingSubtask(null);
-                    setEditSubtaskText('');
-                    setEditSubtaskReminder(undefined);
-                  }}
-                  style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
-                  textStyle={{ color: Colors.PRIMARY_TEXT }}
-                />
-                <CustomButton
-                  title="Update"
-                  onPress={handleUpdateSubtask}
-                  style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
-                  textStyle={{ color: Colors.PRIMARY_TEXT }}
-                />
+                <TouchableOpacity
+                  onPress={() => setShowEditSubtaskDatePicker(true)}
+                  style={styles.inputTouchable}
+                >
+                  <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
+                    {editSubtaskReminder ? `Reminder: ${editSubtaskReminder.toLocaleString()}` : 'Set Reminder'}
+                  </CustomText>
+                  <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
+                </TouchableOpacity>
+                {showEditSubtaskDatePicker && (
+                  <CustomDatePicker
+                    visible={showEditSubtaskDatePicker}
+                    date={editSubtaskReminder || new Date()}
+                    mode="datetime"
+                    minimumDate={new Date()}
+                    onConfirm={(date: Date) => {
+                      setEditSubtaskReminder(date);
+                      setShowEditSubtaskDatePicker(false);
+                    }}
+                    onCancel={() => setShowEditSubtaskDatePicker(false)}
+                  />
+                )}
+                <View style={styles.editModalButtonRow}>
+                  <CustomButton
+                    title="Cancel"
+                    onPress={() => {
+                      setEditingSubtask(null);
+                      setEditSubtaskText('');
+                      setEditSubtaskReminder(undefined);
+                    }}
+                    style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
+                    textStyle={{ color: Colors.PRIMARY_TEXT }}
+                  />
+                  <CustomButton
+                    title="Update"
+                    onPress={handleUpdateSubtask}
+                    style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
+                    textStyle={{ color: Colors.PRIMARY_TEXT }}
+                  />
+                </View>
               </View>
             </View>
-          </View>
-        </Modal>
-      )}
+          </Modal>
+        )}
       </View>
 
       {/* Add Subtask Modal */}
       <View>
-      {showAddSubtaskModal && (
-        <Modal transparent animationType="fade" visible={showAddSubtaskModal} onRequestClose={() => setShowAddSubtaskModal(false)}>
-          <View style={styles.editModalOverlay}>
-            <View style={styles.editModalContainer}>
-              <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
-                Add Subtask
-              </CustomText>
-              <StyledInput
-                mode="outlined"
-                labelText="Subtask Title"
-                value={newSubtask}
-                onChangeText={setNewSubtask}
-                placeholder="Enter subtask"
-                keyboardType="default"
-                colors={{
-                  backgroundColor: Colors.SECONDARY_BACKGROUND,
-                  textColor: Colors.PRIMARY_TEXT,
-                  placeholderTextColor: Colors.SECONDARY_TEXT,
-                  neutralBorderColor: Colors.DIVIDER,
-                }}
-                style={{ marginBottom: 10 }}
-              />
-              <TouchableOpacity
-                onPress={() => setShowNewSubtaskDatePicker(true)}
-                style={styles.inputTouchable}
-              >
-                <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-                  {newSubtaskReminder ? `Reminder: ${newSubtaskReminder.toLocaleString()}` : 'Set Reminder'}
+        {showAddSubtaskModal && (
+          <Modal transparent animationType="fade" visible={showAddSubtaskModal} onRequestClose={() => setShowAddSubtaskModal(false)}>
+            <View style={styles.editModalOverlay}>
+              <View style={styles.editModalContainer}>
+                <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
+                  Add Subtask
                 </CustomText>
-                <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
-              </TouchableOpacity>
-              {showNewSubtaskDatePicker && (
-                <CustomDatePicker
-                  visible={showNewSubtaskDatePicker}
-                  date={newSubtaskReminder || new Date()}
-                  mode="datetime"
-                  minimumDate={new Date()}
-                  onConfirm={(date: Date) => {
-                    setNewSubtaskReminder(date);
-                    setShowNewSubtaskDatePicker(false);
+                <StyledInput
+                  mode="outlined"
+                  labelText="Subtask Title"
+                  value={newSubtask}
+                  onChangeText={setNewSubtask}
+                  placeholder="Enter subtask"
+                  keyboardType="default"
+                  colors={{
+                    backgroundColor: Colors.SECONDARY_BACKGROUND,
+                    textColor: Colors.PRIMARY_TEXT,
+                    placeholderTextColor: Colors.SECONDARY_TEXT,
+                    neutralBorderColor: Colors.DIVIDER,
                   }}
-                  onCancel={() => setShowNewSubtaskDatePicker(false)}
+                  style={{ marginBottom: 10 }}
                 />
-              )}
-              <View style={styles.editModalButtonRow}>
-                <CustomButton
-                  title="Cancel"
-                  onPress={() => {
-                    setShowAddSubtaskModal(false);
-                    setNewSubtask('');
-                    setNewSubtaskReminder(undefined);
-                  }}
-                  style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
-                  textStyle={{ color: Colors.PRIMARY_TEXT }}
-                />
-                <CustomButton
-                  title="Add"
-                  onPress={() => {
-                    handleAddSubtask();
-                    setShowAddSubtaskModal(false);
-                  }}
-                  style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
-                  textStyle={{ color: Colors.PRIMARY_TEXT }}
-                />
+                <TouchableOpacity
+                  onPress={() => setShowNewSubtaskDatePicker(true)}
+                  style={styles.inputTouchable}
+                >
+                  <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
+                    {newSubtaskReminder ? `Reminder: ${newSubtaskReminder.toLocaleString()}` : 'Set Reminder'}
+                  </CustomText>
+                  <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
+                </TouchableOpacity>
+                {showNewSubtaskDatePicker && (
+                  <CustomDatePicker
+                    visible={showNewSubtaskDatePicker}
+                    date={newSubtaskReminder || new Date()}
+                    mode="datetime"
+                    minimumDate={new Date()}
+                    onConfirm={(date: Date) => {
+                      setNewSubtaskReminder(date);
+                      setShowNewSubtaskDatePicker(false);
+                    }}
+                    onCancel={() => setShowNewSubtaskDatePicker(false)}
+                  />
+                )}
+                <View style={styles.editModalButtonRow}>
+                  <CustomButton
+                    title="Cancel"
+                    onPress={() => {
+                      setShowAddSubtaskModal(false);
+                      setNewSubtask('');
+                      setNewSubtaskReminder(undefined);
+                    }}
+                    style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
+                    textStyle={{ color: Colors.PRIMARY_TEXT }}
+                  />
+                  <CustomButton
+                    title="Add"
+                    onPress={() => {
+                      handleAddSubtask();
+                      setShowAddSubtaskModal(false);
+                    }}
+                    style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
+                    textStyle={{ color: Colors.PRIMARY_TEXT }}
+                  />
+                </View>
               </View>
             </View>
-          </View>
-        </Modal>
-      )}
+          </Modal>
+        )}
       </View>
     </SafeAreaView>
   );
