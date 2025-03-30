@@ -4,6 +4,7 @@ import { router, protectedProcedure } from './context.js';
 import prisma from '../prisma/client.js';
 import { logger } from '../utils/logger.js';
 import { uploadFile } from '../utils/upload.js';
+import { scheduleTaskNotification } from '../utils/scheduleNotification.js';
 
 // Helper to unwrap input from nested tRPC envelope.
 const unwrapInput = (val: unknown) => {
@@ -13,6 +14,55 @@ const unwrapInput = (val: unknown) => {
   }
   return val;
 };
+
+/**
+ * Helper function to compute differences between original and updated fields.
+ * It accepts two objects and returns a summary string of the differences.
+ */
+function computeDiff(original: any, updates: any): string {
+  const diffs: string[] = [];
+  for (const key in updates) {
+    if (updates.hasOwnProperty(key)) {
+      const newValue = updates[key];
+      const oldValue = original[key];
+      // For date fields, compare their ISO strings.
+      const oldValStr = oldValue instanceof Date ? oldValue.toISOString() : oldValue;
+      const newValStr = newValue instanceof Date ? newValue.toISOString() : newValue;
+      if (newValue !== undefined && newValue !== null && newValStr !== oldValStr) {
+        diffs.push(`${key} changed from '${oldValStr}' to '${newValStr}'`);
+      }
+    }
+  }
+  return diffs.length ? diffs.join('; ') : 'No changes detected';
+}
+
+/**
+ * Helper function to create an audit log entry.
+ */
+async function createAuditLog({
+  action,
+  description,
+  entityType,
+  entityId,
+  ctx,
+}: {
+  action: string;
+  description: string;
+  entityType?: string;
+  entityId?: string;
+  ctx: any;
+}) {
+  await prisma.auditLog.create({
+    data: {
+      action,
+      description,
+      entityType,
+      entityId,
+      user: { connect: { id: ctx.user.id } },
+      task: entityType === 'Task' && entityId ? { connect: { id: entityId } } : undefined,
+    },
+  });
+}
 
 /* -----------------------------------------------
    TASK PROCEDURES
@@ -37,9 +87,16 @@ const createTask = protectedProcedure
           (val) => (typeof val === 'string' ? new Date(val) : val),
           z.date().optional()
         ),
-        subtasks: z.array(z.object({
-          title: z.string().min(1, "Subtask title is required")
-        })).optional(),
+        subtasks: z.array(
+          z.object({
+            title: z.string().min(1, "Subtask title is required"),
+            // Each subtask may include an optional reminderAt.
+            reminderAt: z.preprocess(
+              (val) => (typeof val === 'string' ? new Date(val) : val),
+              z.date().optional()
+            ),
+          })
+        ).optional(),
       })
     )
   )
@@ -61,12 +118,21 @@ const createTask = protectedProcedure
       },
     });
     logger.success(`Task created: ${task.title} (ID: ${task.id})`);
+    await createAuditLog({
+      action: 'TASK_CREATED',
+      description: `Task created with title '${task.title}'`,
+      entityType: 'Task',
+      entityId: task.id,
+      ctx,
+    });
+    // Schedule notifications for task-level reminders.
+    await scheduleTaskNotification(task, 'dueDate');
+    await scheduleTaskNotification(task, 'reminderAt');
     return task;
   });
 
 /**
  * Get all tasks for the current user with optional filtering.
- * (Now implemented as a mutation.)
  */
 const getTasks = protectedProcedure
   .input(
@@ -117,7 +183,6 @@ const getTasks = protectedProcedure
 
 /**
  * Get a single task by its ID.
- * (Now implemented as a mutation.)
  */
 const getTask = protectedProcedure
   .input(
@@ -132,18 +197,12 @@ const getTask = protectedProcedure
     const userId = ctx.user.id;
     const taskId = input.id;
     logger.debug(`Fetching task ${taskId} for user ${ctx.user.email}`);
-
     const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        creatorId: userId,
-      },
+      where: { id: taskId, creatorId: userId },
     });
-
     if (!task) {
       throw new Error('Task not found');
     }
-
     return { task };
   });
 
@@ -158,18 +217,34 @@ const updateTask = protectedProcedure
         id: z.string(),
         title: z.string().optional(),
         description: z.string().optional(),
-        dueDate: z.preprocess((val) => (typeof val === 'string' ? new Date(val) : val), z.date().optional()),
+        dueDate: z.preprocess(
+          (val) => (typeof val === 'string' ? new Date(val) : val),
+          z.date().optional()
+        ),
         priority: z.number().optional(),
         status: z.string().optional(),
         progress: z.number().optional(),
         isArchived: z.boolean().optional(),
-        reminderAt: z.preprocess((val) => (typeof val === 'string' ? new Date(val) : val), z.date().optional()),
+        reminderAt: z.preprocess(
+          (val) => (typeof val === 'string' ? new Date(val) : val),
+          z.date().optional()
+        ),
       })
     )
   )
   .mutation(async ({ input, ctx }) => {
     const userId = ctx.user.id;
     logger.debug(`Updating task ${input.id} for user ${ctx.user.email}`);
+
+    // Fetch original task for diff comparison.
+    const originalTask = await prisma.task.findFirst({
+      where: { id: input.id, creatorId: userId },
+    });
+    if (!originalTask) {
+      logger.error(`Task ${input.id} not found or unauthorized`);
+      throw new Error('Task update failed');
+    }
+
     const updateData: any = {
       title: input.title,
       description: input.description,
@@ -187,6 +262,8 @@ const updateTask = protectedProcedure
       updateData.isArchived = true;
     }
 
+    const diffDescription = computeDiff(originalTask, updateData);
+
     const result = await prisma.task.updateMany({
       where: { id: input.id, creatorId: userId },
       data: updateData,
@@ -196,7 +273,23 @@ const updateTask = protectedProcedure
       logger.error(`Task update failed: Task ${input.id} not found or unauthorized`);
       throw new Error('Task update failed');
     }
+
     logger.success(`Task updated: ${input.id}`);
+    await createAuditLog({
+      action: 'TASK_UPDATED',
+      description: diffDescription,
+      entityType: 'Task',
+      entityId: input.id,
+      ctx,
+    });
+
+    // Reschedule notifications if dueDate or reminderAt have changed.
+    const updatedTask = await prisma.task.findUnique({ where: { id: input.id } });
+    if (updatedTask) {
+      await scheduleTaskNotification(updatedTask, 'dueDate');
+      await scheduleTaskNotification(updatedTask, 'reminderAt');
+    }
+
     return { success: true };
   });
 
@@ -229,6 +322,13 @@ const completeTask = protectedProcedure
       throw new Error('Task not found or cannot be updated');
     }
     logger.success(`Task marked as completed and archived: ${input.id}`);
+    await createAuditLog({
+      action: 'TASK_COMPLETED',
+      description: `Task marked as completed and archived.`,
+      entityType: 'Task',
+      entityId: input.id,
+      ctx,
+    });
     return { success: true };
   });
 
@@ -255,6 +355,13 @@ const deleteTask = protectedProcedure
       throw new Error('Task deletion failed');
     }
     logger.success(`Task deleted: ${input.id}`);
+    await createAuditLog({
+      action: 'TASK_DELETED',
+      description: `Task deleted: ${input.id}`,
+      entityType: 'Task',
+      entityId: input.id,
+      ctx,
+    });
     return { success: true };
   });
 
@@ -290,12 +397,34 @@ const createSubtask = protectedProcedure
       },
     });
     logger.success(`Subtask created: ${subtask.title} for task ${input.taskId}`);
+    await createAuditLog({
+      action: 'SUBTASK_CREATED',
+      description: `Subtask '${subtask.title}' created for task ${input.taskId}`,
+      entityType: 'Subtask',
+      entityId: subtask.id,
+      ctx,
+    });
+    // If a reminder is set for the subtask, schedule its notification.
+    if (subtask.reminderAt) {
+      const parentTask = await prisma.task.findUnique({
+        where: { id: input.taskId },
+        select: { id: true, title: true, creatorId: true },
+      });
+      if (parentTask) {
+        const subtaskReminderObj = {
+          id: subtask.id,
+          title: `${parentTask.title} - Subtask: ${subtask.title}`,
+          creatorId: parentTask.creatorId,
+          reminderAt: subtask.reminderAt,
+        };
+        await scheduleTaskNotification(subtaskReminderObj, 'reminderAt');
+      }
+    }
     return { subtask };
   });
 
 /**
  * Get all subtasks for a given task.
- * (Now using a mutation.)
  */
 const getSubtasks = protectedProcedure
   .input(
@@ -334,16 +463,45 @@ const updateSubtask = protectedProcedure
     )
   )
   .mutation(async ({ input, ctx }) => {
+    const originalSubtask = await prisma.subtask.findUnique({
+      where: { id: input.id },
+    });
+    if (!originalSubtask) throw new Error("Subtask not found");
+    const updateData = {
+      title: input.title,
+      isCompleted: input.isCompleted,
+      order: input.order,
+      reminderAt: input.reminderAt,
+    };
+    const diffDescription = computeDiff(originalSubtask, updateData);
     const result = await prisma.subtask.update({
       where: { id: input.id },
-      data: {
-        title: input.title,
-        isCompleted: input.isCompleted,
-        order: input.order,
-        reminderAt: input.reminderAt,
-      },
+      data: updateData,
     });
     logger.success(`Subtask updated: ${result.id}`);
+    await createAuditLog({
+      action: 'SUBTASK_UPDATED',
+      description: diffDescription,
+      entityType: 'Subtask',
+      entityId: input.id,
+      ctx,
+    });
+    // If reminder is set/changed, schedule notification.
+    if (result.reminderAt) {
+      const parentTask = await prisma.task.findUnique({
+        where: { id: originalSubtask.taskId },
+        select: { id: true, title: true, creatorId: true },
+      });
+      if (parentTask) {
+        const subtaskReminderObj = {
+          id: result.id,
+          title: `${parentTask.title} - Subtask: ${result.title}`,
+          creatorId: parentTask.creatorId,
+          reminderAt: result.reminderAt,
+        };
+        await scheduleTaskNotification(subtaskReminderObj, 'reminderAt');
+      }
+    }
     return { success: true, subtask: result };
   });
 
@@ -360,16 +518,27 @@ const deleteSubtask = protectedProcedure
     )
   )
   .mutation(async ({ input, ctx }) => {
+    // Optionally, retrieve subtask to cancel scheduled notification if needed.
+    const subtask = await prisma.subtask.findUnique({
+      where: { id: input.id },
+    });
     const result = await prisma.subtask.delete({
       where: { id: input.id },
     });
     logger.success(`Subtask deleted: ${input.id}`);
+    await createAuditLog({
+      action: 'SUBTASK_DELETED',
+      description: `Subtask deleted: ${input.id}`,
+      entityType: 'Subtask',
+      entityId: input.id,
+      ctx,
+    });
+    // OPTIONAL: Cancel scheduled notification if your queue supports cancellation.
     return { success: true };
   });
 
-
 /* -----------------------------------------------
-   REMINDER PROCEDURE
+   REMINDER PROCEDURE FOR TASKS
 ----------------------------------------------- */
 
 /**
@@ -399,6 +568,18 @@ const setReminder = protectedProcedure
       throw new Error('Setting reminder failed');
     }
     logger.success(`Reminder set for task ${input.id} at ${input.reminderAt}`);
+    await createAuditLog({
+      action: 'REMINDER_SET',
+      description: `Reminder set for task ${input.id} at ${input.reminderAt}`,
+      entityType: 'Task',
+      entityId: input.id,
+      ctx,
+    });
+    // Reschedule notification for the new reminder time.
+    const updatedTask = await prisma.task.findUnique({ where: { id: input.id } });
+    if (updatedTask) {
+      await scheduleTaskNotification(updatedTask, 'reminderAt');
+    }
     return { success: true };
   });
 
@@ -408,7 +589,6 @@ const setReminder = protectedProcedure
 
 /**
  * Search tasks by keyword in title or description.
- * (Converted to mutation.)
  */
 const searchTasks = protectedProcedure
   .input(
@@ -461,12 +641,18 @@ const addComment = protectedProcedure
       },
     });
     logger.success(`Comment added to task ${input.taskId} by user ${ctx.user.email}`);
+    await createAuditLog({
+      action: 'COMMENT_ADDED',
+      description: `Comment added to task ${input.taskId}: ${input.content}`,
+      entityType: 'Comment',
+      entityId: comment.id,
+      ctx,
+    });
     return { comment };
   });
 
 /**
  * Get comments for a task.
- * (Converted to mutation.)
  */
 const getComments = protectedProcedure
   .input(
@@ -484,31 +670,6 @@ const getComments = protectedProcedure
       include: { author: true },
     });
     return { comments };
-  });
-
-/* -----------------------------------------------
-   ACTIVITY LOG PROCEDURE
------------------------------------------------ */
-
-/**
- * Get audit logs (activity) for a task.
- * (Converted to mutation.)
- */
-const getTaskActivity = protectedProcedure
-  .input(
-    z.preprocess(
-      unwrapInput,
-      z.object({
-        taskId: z.string(),
-      })
-    )
-  )
-  .mutation(async ({ input, ctx }) => {
-    const logs = await prisma.auditLog.findMany({
-      where: { taskId: input.taskId },
-      orderBy: { timestamp: 'desc' },
-    });
-    return { logs };
   });
 
 /* -----------------------------------------------
@@ -546,12 +707,18 @@ const createAttachment = protectedProcedure
       },
     });
     logger.success(`Attachment created for task ${input.taskId}: ${fileUrl}`);
+    await createAuditLog({
+      action: 'ATTACHMENT_CREATED',
+      description: `Attachment '${input.fileName}' created for task ${input.taskId}`,
+      entityType: 'Attachment',
+      entityId: attachment.id,
+      ctx,
+    });
     return { attachment };
   });
 
 /**
  * Get all attachments for a given task.
- * (Converted to mutation.)
  */
 const getAttachments = protectedProcedure
   .input(
@@ -587,6 +754,13 @@ const deleteAttachment = protectedProcedure
       where: { id: input.id },
     });
     logger.success(`Attachment deleted: ${input.id}`);
+    await createAuditLog({
+      action: 'ATTACHMENT_DELETED',
+      description: `Attachment deleted: ${input.id}`,
+      entityType: 'Attachment',
+      entityId: input.id,
+      ctx,
+    });
     return { success: true };
   });
 
@@ -609,7 +783,6 @@ export const taskRouter = router({
   searchTasks,
   addComment,
   getComments,
-  getTaskActivity,
   createAttachment,
   getAttachments,
   deleteAttachment,
