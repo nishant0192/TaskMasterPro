@@ -603,6 +603,7 @@ export default function TaskListScreen() {
             fontWeight: 'bold',
             fontSize: 20,
           }}
+          icon={<Ionicons name="create-outline" size={24} color={Colors.PRIMARY_TEXT} style={{ paddingBottom: 2 }} />}
         />
       </View>
 

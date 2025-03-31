@@ -1,4 +1,3 @@
-// TaskDetailsScreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
@@ -28,6 +27,10 @@ import {
   useUpdateSubtask,
   useDeleteSubtask,
   useDeleteAttachment,
+  useAddComment,
+  useGetComments,
+  useUpdateComment,
+  useDeleteComment,
 } from '@/api/task/useTask';
 import { Colors } from '@/constants/Colors';
 import { AntDesign, MaterialIcons } from '@expo/vector-icons';
@@ -73,6 +76,12 @@ export default function TaskDetailsScreen() {
   const deleteSubtaskMutation = useDeleteSubtask();
   const deleteAttachmentMutation = useDeleteAttachment();
 
+  // Comment hooks
+  const addCommentMutation = useAddComment();
+  const getCommentsMutation = useGetComments(id);
+  const updateCommentMutation = useUpdateComment();
+  const deleteCommentMutation = useDeleteComment();
+
   // Task details state.
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -101,6 +110,16 @@ export default function TaskDetailsScreen() {
   // Processing state.
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Attachment upload state.
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+
+  // Comments state.
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [editingComment, setEditingComment] = useState<any>(null);
+  const [editCommentText, setEditCommentText] = useState('');
+  const [showEditCommentModal, setShowEditCommentModal] = useState(false);
+
   // Attachment viewer modal state.
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState<{
@@ -121,6 +140,10 @@ export default function TaskDetailsScreen() {
       getTaskByIdMutation.mutate();
       getAttachmentsMutation.mutate();
       getSubtasksMutation.mutate();
+      getCommentsMutation.mutate(undefined, {
+        onSuccess: (data) => setComments(data.comments),
+        onError: (err) => console.error("Error fetching comments", err),
+      });
     }
   }, [id]);
 
@@ -167,7 +190,9 @@ export default function TaskDetailsScreen() {
       Alert.alert('Error', 'Title is required');
       return;
     }
-    if (isProcessing) return;
+    if (isProcessing) return; // Prevent further execution if already processing
+    setIsProcessing(true); // Disable further presses immediately
+
     const updateData: any = {
       id,
       title,
@@ -178,27 +203,34 @@ export default function TaskDetailsScreen() {
       progress: progress ? Number(progress) : undefined,
       isArchived,
     };
+
     if (status === 'DONE') {
       updateData.completedAt = new Date().toISOString();
     }
+
     updateTaskMutation.mutate(updateData, {
       onSuccess: () => {
         console.log('Task updated');
+        setIsProcessing(false);
         router.replace('/task/TaskListScreen');
       },
       onError: (err) => {
         console.error('Error updating task', err);
+        setIsProcessing(false);
         Alert.alert('Error', 'Failed to update task');
       },
     });
   };
 
+
   // Attachment handler.
   const handleAddAttachment = async () => {
     try {
       setIsProcessing(true);
+      setIsUploadingAttachment(true);
       const result = await DocumentPicker.getDocumentAsync({});
       if (result.canceled) {
+        setIsUploadingAttachment(false);
         setIsProcessing(false);
         return;
       }
@@ -216,11 +248,13 @@ export default function TaskDetailsScreen() {
           {
             onSuccess: (data) => {
               setAttachments((prev) => [...prev, data.attachment]);
+              setIsUploadingAttachment(false);
               setIsProcessing(false);
             },
             onError: (err) => {
               console.error('Error adding attachment', err);
               Alert.alert('Error', 'Failed to add attachment');
+              setIsUploadingAttachment(false);
               setIsProcessing(false);
             },
           }
@@ -229,6 +263,7 @@ export default function TaskDetailsScreen() {
     } catch (err) {
       console.error('Attachment error:', err);
       Alert.alert('Error', 'Failed to add attachment');
+      setIsUploadingAttachment(false);
       setIsProcessing(false);
     }
   };
@@ -383,7 +418,7 @@ export default function TaskDetailsScreen() {
 
   // Render each subtask row.
   const renderSubtaskItem = ({ item, drag, isActive, getIndex }: RenderItemParams<any>) => (
-    <SafeAreaView className='flex-1 justify-center items-center'>
+    <SafeAreaView className="flex-1 justify-center items-center">
       <View style={styles.subtaskRow}>
         <TouchableOpacity onLongPress={drag} style={{ marginRight: 8 }}>
           <AntDesign name="bars" size={20} color={Colors.PRIMARY_TEXT} />
@@ -399,7 +434,7 @@ export default function TaskDetailsScreen() {
         <TouchableOpacity onPress={() => openEditSubtaskModal(item)} style={{ marginHorizontal: 8 }}>
           <AntDesign name="edit" size={24} color={Colors.BUTTON} />
         </TouchableOpacity>
-        <View className=''>
+        <View>
           <TouchableOpacity
             onPress={() => {
               showDialog({
@@ -426,12 +461,89 @@ export default function TaskDetailsScreen() {
     </SafeAreaView>
   );
 
+  // Comments functions
+  const refreshComments = () => {
+    if (id) {
+      getCommentsMutation.mutate(undefined, {
+        onSuccess: (data) => setComments(data.comments),
+        onError: (err) => console.error("Error fetching comments", err),
+      });
+    }
+  };
+
+  const handleAddComment = () => {
+    if (!newComment.trim()) {
+      showAlert({ message: 'Comment cannot be empty', type: 'error', title: 'Error' });
+      return;
+    }
+    addCommentMutation.mutate({ taskId: id, content: newComment.trim() }, {
+      onSuccess: () => {
+        refreshComments();
+        setNewComment('');
+      },
+      onError: (err) => {
+        console.error("Error adding comment", err);
+        showAlert({ message: 'Failed to add comment', type: 'error', title: 'Error' });
+      }
+    });
+  };
+
+  const openEditCommentModal = (comment: any) => {
+    setEditingComment(comment);
+    setEditCommentText(comment.content);
+    setShowEditCommentModal(true);
+  };
+
+  const handleUpdateComment = () => {
+    if (!editCommentText.trim()) {
+      showAlert({ message: 'Comment cannot be empty', type: 'error', title: 'Error' });
+      return;
+    }
+    updateCommentMutation.mutate({ id: editingComment.id, content: editCommentText.trim() }, {
+      onSuccess: () => {
+        refreshComments();
+        setShowEditCommentModal(false);
+        setEditingComment(null);
+        setEditCommentText('');
+      },
+      onError: (err) => {
+        console.error("Error updating comment", err);
+        showAlert({ message: 'Failed to update comment', type: 'error', title: 'Error' });
+      }
+    });
+  };
+
+  const handleDeleteComment = (commentId: string) => {
+    showDialog({
+      message: 'Are you sure you want to delete this comment?',
+      type: 'warning',
+      title: 'Delete Comment',
+      cancelText: 'Cancel',
+      confirmText: 'Delete',
+      onConfirmPressed: () => {
+        deleteCommentMutation.mutate({ id: commentId }, {
+          onSuccess: () => {
+            refreshComments();
+          },
+          onError: (err) => {
+            console.error("Error deleting comment", err);
+            showAlert({ message: 'Failed to delete comment', type: 'error', title: 'Error' });
+          }
+        });
+      },
+      onCancelPressed: () => {
+        showAlert({ message: 'Deletion cancelled', type: 'info', title: 'Cancelled' });
+      }
+    });
+  };
+
   useEffect(() => {
     if (id) {
       // Refresh task details if needed.
       getTaskByIdMutation.mutate();
       getAttachmentsMutation.mutate();
       getSubtasksMutation.mutate();
+      refreshComments();
     }
   }, [id]);
 
@@ -642,6 +754,11 @@ export default function TaskDetailsScreen() {
               No attachments available.
             </CustomText>
           )}
+          {isUploadingAttachment && (
+            <CustomText variant="headingSmall" style={{ color: Colors.SECONDARY_TEXT }}>
+              Uploading attachment...
+            </CustomText>
+          )}
           <CustomButton
             title="Add Attachment"
             onPress={handleAddAttachment}
@@ -666,6 +783,58 @@ export default function TaskDetailsScreen() {
             title="Add Subtask"
             onPress={() => setShowAddSubtaskModal(true)}
             style={{ backgroundColor: Colors.ACCENT, paddingVertical: 8, borderRadius: 6, marginTop: 16 }}
+            textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold' }}
+          />
+        </View>
+
+        {/* Comments Section */}
+        <View style={{ marginBottom: 24 }}>
+          <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 8 }}>
+            Comments:
+          </CustomText>
+          {comments.length > 0 ? (
+            comments.map((comment) => (
+              <View key={comment.id} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 4 }}>
+                <View style={{ flex: 1 }}>
+                  <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT }}>
+                    {comment.content}
+                  </CustomText>
+                  <CustomText variant="bodySmall" style={{ color: Colors.SECONDARY_TEXT }}>
+                    {comment.author.name} {comment.author.profileImage ? '(Profile Image)' : ''}
+                  </CustomText>
+                </View>
+                <TouchableOpacity onPress={() => openEditCommentModal(comment)} style={{ marginHorizontal: 8 }}>
+                  <AntDesign name="edit" size={24} color={Colors.BUTTON} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDeleteComment(comment.id)} style={{ marginHorizontal: 8 }}>
+                  <AntDesign name="delete" size={24} color={Colors.ERROR} />
+                </TouchableOpacity>
+              </View>
+            ))
+          ) : (
+            <CustomText variant="headingSmall" style={{ color: Colors.SECONDARY_TEXT }}>
+              No comments available.
+            </CustomText>
+          )}
+          <StyledInput
+            mode="outlined"
+            labelText="New Comment"
+            value={newComment}
+            onChangeText={setNewComment}
+            placeholder="Enter your comment"
+            keyboardType="default"
+            colors={{
+              backgroundColor: Colors.SECONDARY_BACKGROUND,
+              textColor: Colors.PRIMARY_TEXT,
+              placeholderTextColor: Colors.SECONDARY_TEXT,
+              neutralBorderColor: Colors.DIVIDER,
+            }}
+            style={{ marginBottom: 8 }}
+          />
+          <CustomButton
+            title="Add Comment"
+            onPress={handleAddComment}
+            style={{ backgroundColor: Colors.BUTTON, paddingVertical: 8, borderRadius: 6 }}
             textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold' }}
           />
         </View>
@@ -792,85 +961,128 @@ export default function TaskDetailsScreen() {
             </View>
           </Modal>
         </View>
-      )
-      }
+      )}
+
+      {/* Edit Comment Modal */}
+      {showEditCommentModal && (
+        <Modal transparent animationType="fade" visible={showEditCommentModal} onRequestClose={() => setShowEditCommentModal(false)}>
+          <View style={styles.editModalOverlay}>
+            <View style={styles.editModalContainer}>
+              <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
+                Edit Comment
+              </CustomText>
+              <StyledInput
+                mode="outlined"
+                labelText="Comment"
+                value={editCommentText}
+                onChangeText={setEditCommentText}
+                placeholder="Edit your comment"
+                keyboardType="default"
+                colors={{
+                  backgroundColor: Colors.SECONDARY_BACKGROUND,
+                  textColor: Colors.PRIMARY_TEXT,
+                  placeholderTextColor: Colors.SECONDARY_TEXT,
+                  neutralBorderColor: Colors.DIVIDER,
+                }}
+                style={{ marginBottom: 10 }}
+              />
+              <View style={styles.editModalButtonRow}>
+                <CustomButton
+                  title="Cancel"
+                  onPress={() => {
+                    setShowEditCommentModal(false);
+                    setEditingComment(null);
+                    setEditCommentText('');
+                  }}
+                  style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
+                  textStyle={{ color: Colors.PRIMARY_TEXT }}
+                />
+                <CustomButton
+                  title="Update"
+                  onPress={handleUpdateComment}
+                  style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
+                  textStyle={{ color: Colors.PRIMARY_TEXT }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Add Subtask Modal */}
-      {
-        showAddSubtaskModal && (
-          <View>
-            <Modal transparent animationType="fade" visible={showAddSubtaskModal} onRequestClose={() => setShowAddSubtaskModal(false)}>
-              <View style={{ flex: 1 }}>
-                <View style={styles.editModalOverlay}>
-                  <View style={styles.editModalContainer}>
-                    <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
-                      Add Subtask
+      {showAddSubtaskModal && (
+        <View>
+          <Modal transparent animationType="fade" visible={showAddSubtaskModal} onRequestClose={() => setShowAddSubtaskModal(false)}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.editModalOverlay}>
+                <View style={styles.editModalContainer}>
+                  <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 10 }}>
+                    Add Subtask
+                  </CustomText>
+                  <StyledInput
+                    mode="outlined"
+                    labelText="Subtask Title"
+                    value={newSubtask}
+                    onChangeText={setNewSubtask}
+                    placeholder="Enter subtask"
+                    keyboardType="default"
+                    colors={{
+                      backgroundColor: Colors.SECONDARY_BACKGROUND,
+                      textColor: Colors.PRIMARY_TEXT,
+                      placeholderTextColor: Colors.SECONDARY_TEXT,
+                      neutralBorderColor: Colors.DIVIDER,
+                    }}
+                    style={{ marginBottom: 10 }}
+                  />
+                  <TouchableOpacity onPress={() => setShowNewSubtaskDatePicker(true)} style={styles.inputTouchable}>
+                    <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
+                      {newSubtaskReminder ? `Reminder: ${newSubtaskReminder.toLocaleString()}` : 'Set Reminder'}
                     </CustomText>
-                    <StyledInput
-                      mode="outlined"
-                      labelText="Subtask Title"
-                      value={newSubtask}
-                      onChangeText={setNewSubtask}
-                      placeholder="Enter subtask"
-                      keyboardType="default"
-                      colors={{
-                        backgroundColor: Colors.SECONDARY_BACKGROUND,
-                        textColor: Colors.PRIMARY_TEXT,
-                        placeholderTextColor: Colors.SECONDARY_TEXT,
-                        neutralBorderColor: Colors.DIVIDER,
-                      }}
-                      style={{ marginBottom: 10 }}
-                    />
-                    <TouchableOpacity onPress={() => setShowNewSubtaskDatePicker(true)} style={styles.inputTouchable}>
-                      <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-                        {newSubtaskReminder ? `Reminder: ${newSubtaskReminder.toLocaleString()}` : 'Set Reminder'}
-                      </CustomText>
-                      <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
-                    </TouchableOpacity>
-                    {showNewSubtaskDatePicker && (
-                      <View style={{ flex: 1 }}>
-                        <CustomDatePicker
-                          visible={showNewSubtaskDatePicker}
-                          date={newSubtaskReminder || new Date()}
-                          mode="datetime"
-                          minimumDate={new Date()}
-                          onConfirm={(date: Date) => {
-                            setNewSubtaskReminder(date);
-                            setShowNewSubtaskDatePicker(false);
-                          }}
-                          onCancel={() => setShowNewSubtaskDatePicker(false)}
-                        />
-                      </View>
-                    )}
-                    <View style={styles.editModalButtonRow}>
-                      <CustomButton
-                        title="Cancel"
-                        onPress={() => {
-                          setShowAddSubtaskModal(false);
-                          setNewSubtask('');
-                          setNewSubtaskReminder(undefined);
+                    <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
+                  </TouchableOpacity>
+                  {showNewSubtaskDatePicker && (
+                    <View style={{ flex: 1 }}>
+                      <CustomDatePicker
+                        visible={showNewSubtaskDatePicker}
+                        date={newSubtaskReminder || new Date()}
+                        mode="datetime"
+                        minimumDate={new Date()}
+                        onConfirm={(date: Date) => {
+                          setNewSubtaskReminder(date);
+                          setShowNewSubtaskDatePicker(false);
                         }}
-                        style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
-                        textStyle={{ color: Colors.PRIMARY_TEXT }}
-                      />
-                      <CustomButton
-                        title="Add"
-                        onPress={() => {
-                          handleAddSubtask();
-                          setShowAddSubtaskModal(false);
-                        }}
-                        style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
-                        textStyle={{ color: Colors.PRIMARY_TEXT }}
+                        onCancel={() => setShowNewSubtaskDatePicker(false)}
                       />
                     </View>
+                  )}
+                  <View style={styles.editModalButtonRow}>
+                    <CustomButton
+                      title="Cancel"
+                      onPress={() => {
+                        setShowAddSubtaskModal(false);
+                        setNewSubtask('');
+                        setNewSubtaskReminder(undefined);
+                      }}
+                      style={[styles.editModalButton, { backgroundColor: Colors.DIVIDER }]}
+                      textStyle={{ color: Colors.PRIMARY_TEXT }}
+                    />
+                    <CustomButton
+                      title="Add"
+                      onPress={() => {
+                        handleAddSubtask();
+                        setShowAddSubtaskModal(false);
+                      }}
+                      style={[styles.editModalButton, { backgroundColor: Colors.BUTTON }]}
+                      textStyle={{ color: Colors.PRIMARY_TEXT }}
+                    />
                   </View>
                 </View>
               </View>
-            </Modal>
-          </View>
-        )
-      }
-    </SafeAreaView >
+            </View>
+          </Modal>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
@@ -977,4 +1189,3 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
 });
-

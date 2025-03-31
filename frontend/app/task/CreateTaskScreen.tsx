@@ -4,10 +4,10 @@ import CustomText from '@/components/CustomText';
 import CustomButton from '@/components/CustomButton';
 import StyledInput from '@/components/StyledInput';
 import CustomDatePicker from '@/components/CustomDatePicker';
-import { useCreateTask, useCreateAttachment } from '@/api/task/useTask';
+import { useCreateTask, useCreateAttachment, useAddComment } from '@/api/task/useTask';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
-import { AntDesign, MaterialIcons } from '@expo/vector-icons';
+import { AntDesign, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import { showAlert, showDialog } from '@/components/CustomAlert';
@@ -33,9 +33,14 @@ export default function CreateTaskScreen() {
   // Attachments state
   const [attachments, setAttachments] = useState<{ name: string; uri: string }[]>([]);
 
+  // New: Initial comment state for the task (optional)
+  const [initialComment, setInitialComment] = useState('');
+
   const router = useRouter();
   const { mutate: createTask, status } = useCreateTask();
   const { mutate: createAttachment } = useCreateAttachment();
+  // New: Hook to add a comment
+  const { mutate: addComment } = useAddComment();
   const isMutating = status === 'pending';
 
   // Add attachment via DocumentPicker.
@@ -76,9 +81,9 @@ export default function CreateTaskScreen() {
       reminderAt: reminderAt ? reminderAt.toISOString() : undefined,
       subtasks: subtasks.length > 0
         ? subtasks.map((st) => ({
-            title: st.title,
-            reminderAt: st.reminderAt ? st.reminderAt.toISOString() : undefined,
-          }))
+          title: st.title,
+          reminderAt: st.reminderAt ? st.reminderAt.toISOString() : undefined,
+        }))
         : undefined,
     };
 
@@ -100,6 +105,10 @@ export default function CreateTaskScreen() {
               });
             })
           );
+        }
+        // New: If an initial comment was provided, add it.
+        if (taskId && initialComment.trim()) {
+          addComment({ taskId, content: initialComment.trim() });
         }
         router.replace('/task/TaskListScreen');
       },
@@ -131,9 +140,6 @@ export default function CreateTaskScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 16 }}>
-          Create Task
-        </CustomText>
 
         {/* Title Input */}
         <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT }}>
@@ -339,6 +345,27 @@ export default function CreateTaskScreen() {
           textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold' }}
           disabled={isMutating}
         />
+
+        {/* New: Initial Comment Section */}
+        <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 8 }}>
+          Initial Comment:
+        </CustomText>
+        <StyledInput
+          mode="outlined"
+          labelText="Comment"
+          value={initialComment}
+          onChangeText={setInitialComment}
+          placeholder="Enter an optional comment"
+          keyboardType="default"
+          colors={{
+            backgroundColor: Colors.SECONDARY_BACKGROUND,
+            textColor: Colors.PRIMARY_TEXT,
+            placeholderTextColor: Colors.SECONDARY_TEXT,
+            neutralBorderColor: Colors.DIVIDER,
+          }}
+          style={{ marginBottom: 16 }}
+          editable={!isMutating}
+        />
       </ScrollView>
 
       {/* Sticky Create Task Button */}
@@ -361,6 +388,7 @@ export default function CreateTaskScreen() {
           fontSize: 20,
         }}
         disabled={isMutating}
+        icon={<Ionicons name="create-outline" size={24} color={Colors.PRIMARY_TEXT} style={{ paddingBottom: 2 }} />}
       />
 
       {/* Due Date & Time Picker */}

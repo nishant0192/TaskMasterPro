@@ -645,6 +645,14 @@ const addComment = protectedProcedure
     )
   )
   .mutation(async ({ input, ctx }) => {
+    // Check that the task exists before attempting to add a comment.
+    const task = await prisma.task.findUnique({
+      where: { id: input.taskId },
+      select: { id: true },
+    });
+    if (!task) {
+      throw new Error('Task not found for adding comment');
+    }
     const userId = ctx.user.id;
     const comment = await prisma.comment.create({
       data: {
@@ -665,7 +673,7 @@ const addComment = protectedProcedure
   });
 
 /**
- * Get comments for a task.
+ * Get all comments for a given task.
  */
 const getComments = protectedProcedure
   .input(
@@ -680,10 +688,98 @@ const getComments = protectedProcedure
     const comments = await prisma.comment.findMany({
       where: { taskId: input.taskId },
       orderBy: { createdAt: 'asc' },
-      include: { author: true },
+      include: {
+        author: {
+          select: {
+            name: true,
+            profileImage: true
+          }
+        }
+      },
     });
     return { comments };
   });
+
+
+/**
+ * Update a comment.
+ */
+const updateComment = protectedProcedure
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        id: z.string(),
+        content: z.string().min(1, "Comment cannot be empty"),
+      })
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
+    const userId = ctx.user.id;
+    // Retrieve the original comment to ensure it exists and that the current user is the author.
+    const originalComment = await prisma.comment.findUnique({
+      where: { id: input.id },
+    });
+    if (!originalComment) {
+      throw new Error('Comment not found');
+    }
+    if (originalComment.authorId !== userId) {
+      throw new Error('Unauthorized to update comment');
+    }
+    const diffDescription = computeDiff(originalComment, { content: input.content });
+    const updatedComment = await prisma.comment.update({
+      where: { id: input.id },
+      data: { content: input.content },
+    });
+    logger.success(`Comment updated: ${input.id}`);
+    await createAuditLog({
+      action: 'COMMENT_UPDATED',
+      description: diffDescription,
+      entityType: 'Comment',
+      entityId: input.id,
+      ctx,
+    });
+    return { comment: updatedComment };
+  });
+
+/**
+ * Delete a comment.
+ */
+const deleteComment = protectedProcedure
+  .input(
+    z.preprocess(
+      unwrapInput,
+      z.object({
+        id: z.string(),
+      })
+    )
+  )
+  .mutation(async ({ input, ctx }) => {
+    const userId = ctx.user.id;
+    // Retrieve the comment to verify existence and authorization.
+    const comment = await prisma.comment.findUnique({
+      where: { id: input.id },
+    });
+    if (!comment) {
+      throw new Error('Comment not found');
+    }
+    if (comment.authorId !== userId) {
+      throw new Error('Unauthorized to delete comment');
+    }
+    await prisma.comment.delete({
+      where: { id: input.id },
+    });
+    logger.success(`Comment deleted: ${input.id}`);
+    await createAuditLog({
+      action: 'COMMENT_DELETED',
+      description: `Comment deleted: ${input.id}`,
+      entityType: 'Comment',
+      entityId: input.id,
+      ctx,
+    });
+    return { success: true };
+  });
+
 
 /* -----------------------------------------------
    ATTACHMENT PROCEDURES
@@ -840,6 +936,8 @@ export const taskRouter = router({
   searchTasks,
   addComment,
   getComments,
+  updateComment,
+  deleteComment,
   createAttachment,
   getAttachments,
   deleteAttachment,

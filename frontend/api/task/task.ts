@@ -203,6 +203,22 @@ export async function getComments(data: { taskId: string }) {
   return request('task.getComments', data, 'mutation');
 }
 
+/**
+ * Update a comment.
+ * Input: { id: string; content: string }
+ */
+export async function updateComment(data: { id: string; content: string }) {
+  return request('task.updateComment', data, 'mutation');
+}
+
+/**
+ * Delete a comment.
+ * Input: { id: string }
+ */
+export async function deleteComment(data: { id: string }) {
+  return request('task.deleteComment', data, 'mutation');
+}
+
 /* ----- Activity Log Endpoint ----- */
 
 /**
