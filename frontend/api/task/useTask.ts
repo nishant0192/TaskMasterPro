@@ -139,14 +139,21 @@ export function useCompleteTask(): UseMutationResult<
 }
 
 export function useDeleteTask(): UseMutationResult<
-  any,
+  { success: boolean },
   Error,
   { id: string },
   { previousTasks: any }
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data) => deleteTask(data),
+    mutationFn: async (data) => {
+      const res = await deleteTask(data);
+      // Check if the backend returned success
+      if (!res || !res.success) {
+        throw new Error('Deletion failed');
+      }
+      return res;
+    },
     onMutate: async (data) => {
       await queryClient.cancelQueries({ queryKey: ['tasks'] });
       const previousTasks = queryClient.getQueryData(['tasks']);

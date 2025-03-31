@@ -5,6 +5,7 @@ import prisma from '../prisma/client.js';
 import { logger } from '../utils/logger.js';
 import { uploadFile } from '../utils/upload.js';
 import { scheduleTaskNotification } from '../utils/scheduleNotification.js';
+import { v2 as cloudinary } from 'cloudinary';
 
 // Helper to unwrap input from nested tRPC envelope.
 const unwrapInput = (val: unknown) => {
@@ -347,14 +348,24 @@ const deleteTask = protectedProcedure
   .mutation(async ({ input, ctx }) => {
     const userId = ctx.user.id;
     logger.debug(`Deleting task ${input.id} for user ${ctx.user.email}`);
-    const result = await prisma.task.deleteMany({
-      where: { id: input.id, creatorId: userId },
+
+    // First, find the task to ensure it exists and is owned by the user.
+    const task = await prisma.task.findUnique({
+      where: { id: input.id },
     });
-    if (result.count === 0) {
+    logger.debug(`Task found: ${task?.id}`);
+    if (!task || task.creatorId !== userId) {
       logger.error(`Task deletion failed: Task ${input.id} not found or unauthorized`);
       throw new Error('Task deletion failed');
     }
+
+    // Proceed to delete the task.
+    const response = await prisma.task.delete({
+      where: { id: input.id },
+    });
+    logger.debug(`Task deleted: ${response}`);
     logger.success(`Task deleted: ${input.id}`);
+
     await createAuditLog({
       action: 'TASK_DELETED',
       description: `Task deleted: ${input.id}`,
@@ -362,8 +373,10 @@ const deleteTask = protectedProcedure
       entityId: input.id,
       ctx,
     });
+
     return { success: true };
   });
+
 
 /* -----------------------------------------------
    SUBTASK PROCEDURES
@@ -750,10 +763,53 @@ const deleteAttachment = protectedProcedure
     )
   )
   .mutation(async ({ input, ctx }) => {
+    // Fetch the attachment to get its file URL
+    const attachment = await prisma.attachment.findUnique({
+      where: { id: input.id },
+      select: { fileUrl: true }, // Assuming 'fileurl' is the field that stores the Cloudinary URL
+    });
+
+    if (!attachment) {
+      throw new Error(`Attachment not found: ${input.id}`);
+    }
+
+    // Extract the public_id from the file URL
+    const fileUrl = attachment.fileUrl;  // e.g. https://res.cloudinary.com/dbnsrpwet/image/upload/v1743153948/IMG_20250327_134034.jpg.jpg
+    // Remove the file extension and extract the correct public_id
+    const publicId = fileUrl
+      .split('/').slice(-1)[0] // Extract the last part of the URL (filename with extension)
+      .replace(/\.[^.]+$/, ''); // Remove the file extension (.jpg)
+
+    // Ensure the public_id includes the "attachments/" folder if applicable
+    const folderedPublicId = `attachments/${publicId}`;
+
+    // Log the public_id to ensure it's correct
+    logger.info(`Attempting to delete from Cloudinary with public_id: ${folderedPublicId}`);
+
+    // Proceed with Cloudinary delete
+    try {
+      const cloudinaryResult = await cloudinary.uploader.destroy(folderedPublicId);
+      logger.success(`Attachment deleted from Cloudinary: ${folderedPublicId}`);
+
+      // Log the full Cloudinary response for debugging
+      logger.info(`Cloudinary response: ${JSON.stringify(cloudinaryResult)}`);
+
+      if (cloudinaryResult.result !== 'ok') {
+        logger.error(`Cloudinary deletion failed: ${JSON.stringify(cloudinaryResult)}`);
+        throw new Error('Failed to delete from Cloudinary');
+      }
+    } catch (error) {
+      logger.error('Error deleting attachment from Cloudinary:', error);
+    }
+
+    // Delete the attachment from your database
     const result = await prisma.attachment.delete({
       where: { id: input.id },
     });
-    logger.success(`Attachment deleted: ${input.id}`);
+
+    logger.success(`Attachment deleted from database: ${input.id}`);
+
+    // Create an audit log for the deletion action
     await createAuditLog({
       action: 'ATTACHMENT_DELETED',
       description: `Attachment deleted: ${input.id}`,
@@ -761,6 +817,7 @@ const deleteAttachment = protectedProcedure
       entityId: input.id,
       ctx,
     });
+
     return { success: true };
   });
 

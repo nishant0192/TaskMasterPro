@@ -1,112 +1,112 @@
 // schema.prisma (Backend)
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL") // e.g., postgres://user:password@host:port/db
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // e.g., postgres://user:password@host:port/db
 }
 
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 enum TeamRole {
-    OWNER
-    ADMIN
-    MEMBER
+  OWNER
+  ADMIN
+  MEMBER
 }
 
 model User {
-    id              String    @id @default(uuid())
-    email           String    @unique
-    passwordHash    String? // Nullable if using OAuth only
-    oauthProvider   String? // e.g., "google", "facebook"
-    oauthProviderId String?
-    name            String?
-    profileImage    String? // URL to profile image
-    isActive        Boolean   @default(true)
-    lastLogin       DateTime?
-    createdAt       DateTime  @default(now())
-    updatedAt       DateTime  @updatedAt
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String?   // Nullable if using OAuth only
+  oauthProvider   String?   // e.g., "google", "facebook"
+  oauthProviderId String?
+  name            String?
+  profileImage    String?   // URL to profile image
+  isActive        Boolean   @default(true)
+  lastLogin       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-    // Fields for password reset functionality
-    resetPasswordToken   String?
-    resetPasswordExpires DateTime?
+  // Fields for password reset functionality
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
 
-    refreshTokenVersion Int @default(0)
-    expoPushToken         String?
+  refreshTokenVersion Int       @default(0)
+  expoPushToken         String?
 
-    // Relations
-    teams         TeamMembership[]
-    tasksCreated  Task[]           @relation("tasks_created")
-    tasksAssigned Task[]           @relation("tasks_assigned")
-    attachments   Attachment[]
-    notifications Notification[]
-    auditLogs     AuditLog[]
-    Team          Team[]
-    Comment       Comment[]
+  // Relations
+  teams         TeamMembership[]
+  tasksCreated  Task[]           @relation("tasks_created")
+  tasksAssigned Task[]           @relation("tasks_assigned")
+  attachments   Attachment[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  Team          Team[]
+  Comment       Comment[]
 }
 
 model Team {
-    id          String   @id @default(uuid())
-    name        String
-    description String?
-    isActive    Boolean  @default(true)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-    // Relations
-    members       TeamMembership[]
-    tasks         Task[]
-    createdBy     User?            @relation(fields: [createdById], references: [id])
-    createdById   String?
-    notifications Notification[]
+  // Relations
+  members       TeamMembership[]
+  tasks         Task[]
+  createdBy     User?            @relation(fields: [createdById], references: [id])
+  createdById   String?
+  notifications Notification[]
 
-    @@index([createdById])
+  @@index([createdById])
 }
 
 model TeamMembership {
-    id       String   @id @default(uuid())
-    role     TeamRole
-    user     User     @relation(fields: [userId], references: [id])
-    team     Team     @relation(fields: [teamId], references: [id])
-    userId   String
-    teamId   String
-    joinedAt DateTime @default(now())
+  id       String   @id @default(uuid())
+  role     TeamRole
+  user     User     @relation(fields: [userId], references: [id])
+  team     Team     @relation(fields: [teamId], references: [id])
+  userId   String
+  teamId   String
+  joinedAt DateTime @default(now())
 
-    @@unique([userId, teamId])
-    @@index([teamId])
-    @@index([userId])
+  @@unique([userId, teamId])
+  @@index([teamId])
+  @@index([userId])
 }
 
 model Task {
-    id          String    @id @default(uuid())
-    title       String
-    description String?
-    status      String    @default("TODO")
-    priority    Int?
-    dueDate     DateTime?
-    reminderAt  DateTime? // NEW: Reminder date
-    completedAt DateTime?
-    isArchived  Boolean   @default(false)
-    progress    Int?
-    createdAt   DateTime  @default(now())
-    updatedAt   DateTime  @updatedAt
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  status      String    @default("TODO")
+  priority    Int?
+  dueDate     DateTime?
+  reminderAt  DateTime? // NEW: Reminder date
+  completedAt DateTime?
+  isArchived  Boolean   @default(false)
+  progress    Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-    // Relations
-    creator       User           @relation("tasks_created", fields: [creatorId], references: [id])
-    creatorId     String
-    assignee      User?          @relation("tasks_assigned", fields: [assigneeId], references: [id])
-    assigneeId    String?
-    team          Team?          @relation(fields: [teamId], references: [id])
-    teamId        String?
-    attachments   Attachment[]
-    auditLogs     AuditLog[]
-    notifications Notification[]
-    subtasks      Subtask[] // NEW relation
-    comments      Comment[] // NEW relation
+  // Relations
+  creator       User           @relation("tasks_created", fields: [creatorId], references: [id])
+  creatorId     String
+  assignee      User?          @relation("tasks_assigned", fields: [assigneeId], references: [id])
+  assigneeId    String?
+  team          Team?          @relation(fields: [teamId], references: [id])
+  teamId        String?
+  attachments   Attachment[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  subtasks      Subtask[] // NEW relation
+  comments      Comment[] // NEW relation
 
-    @@index([teamId])
-    @@index([assigneeId])
-    @@index([creatorId])
+  @@index([teamId])
+  @@index([assigneeId])
+  @@index([creatorId])
 }
 
 model Subtask {
@@ -118,81 +118,79 @@ model Subtask {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  task   Task   @relation(fields: [taskId], references: [id])
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
   taskId String
 
   @@index([taskId])
 }
 
-
-
 model Comment {
-    id        String   @id @default(uuid())
-    content   String
-    createdAt DateTime @default(now())
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
 
-    task   Task   @relation(fields: [taskId], references: [id])
-    taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId String
 
-    author   User   @relation(fields: [authorId], references: [id])
-    authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId String
 
-    @@index([taskId])
-    @@index([authorId])
+  @@index([taskId])
+  @@index([authorId])
 }
 
 model Attachment {
-    id         String   @id @default(uuid())
-    fileName   String
-    fileType   String? // MIME type or category
-    fileSize   Int?
-    fileUrl    String // URL/path to file in external storage (e.g., S3)
-    uploadedAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  fileName   String
+  fileType   String? // MIME type or category
+  fileSize   Int?
+  fileUrl    String // URL/path to file in external storage (e.g., S3)
+  uploadedAt DateTime @default(now())
 
-    // Relations
-    task         Task    @relation(fields: [taskId], references: [id])
-    taskId       String
-    uploadedBy   User?   @relation(fields: [uploadedById], references: [id])
-    uploadedById String?
+  // Relations
+  task         Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId       String
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id])
+  uploadedById String?
 
-    @@index([taskId])
-    @@index([uploadedById])
+  @@index([taskId])
+  @@index([uploadedById])
 }
 
 model Notification {
-    id        String   @id @default(uuid())
-    message   String
-    isRead    Boolean  @default(false)
-    createdAt DateTime @default(now())
+  id        String   @id @default(uuid())
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 
-    // Optional relations: a notification can target an individual user, a team, or be linked to a task.
-    user   User?   @relation(fields: [userId], references: [id])
-    userId String?
-    team   Team?   @relation(fields: [teamId], references: [id])
-    teamId String?
-    task   Task?   @relation(fields: [taskId], references: [id])
-    taskId String?
+  // Optional relations: a notification can target an individual user, a team, or be linked to a task.
+  user   User?   @relation(fields: [userId], references: [id])
+  userId String?
+  team   Team?   @relation(fields: [teamId], references: [id])
+  teamId String?
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId String?
 
-    @@index([userId])
-    @@index([teamId])
+  @@index([userId])
+  @@index([teamId])
 }
 
 model AuditLog {
-    id          String   @id @default(uuid())
-    action      String // e.g., "TASK_CREATED", "TASK_UPDATED", "ATTACHMENT_DELETED"
-    description String? // Detailed message or JSON diff of changes
-    timestamp   DateTime @default(now())
+  id          String   @id @default(uuid())
+  action      String // e.g., "TASK_CREATED", "TASK_UPDATED", "ATTACHMENT_DELETED"
+  description String? // Detailed message or JSON diff of changes
+  timestamp   DateTime @default(now())
 
-    // Relation: which user performed this action.
-    user   User?   @relation(fields: [userId], references: [id])
-    userId String?
+  // Relation: which user performed this action.
+  user   User?   @relation(fields: [userId], references: [id])
+  userId String?
 
-    // Polymorphic relation: reference to the affected entity (e.g., Task, Attachment)
-    entityType String? // e.g., "Task", "Attachment"
-    entityId   String? // The UUID of the affected entity
-    task       Task?   @relation(fields: [taskId], references: [id])
-    taskId     String?
+  // Polymorphic relation: reference to the affected entity (e.g., Task, Attachment)
+  entityType String? // e.g., "Task", "Attachment"
+  entityId   String? // The UUID of the affected entity
+  task       Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String?
 
-    @@index([entityType, entityId])
-    @@index([userId])
+  @@index([entityType, entityId])
+  @@index([userId])
 }

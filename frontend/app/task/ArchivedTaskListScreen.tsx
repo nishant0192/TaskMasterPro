@@ -1,17 +1,36 @@
-// ArchivedTaskListScreen.tsx
 import React from 'react';
 import { SafeAreaView, FlatList, TouchableOpacity } from 'react-native';
 import CustomText from '@/components/CustomText';
 import { useTasksStore } from '@/store/tasksStore';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { Task } from '@/types/tasks';
 import { useUpdateTask } from '@/api/task/useTask';
+import { showAlert } from '@/components/CustomAlert';
 
 const ArchivedTaskItem: React.FC<{ task: Task }> = ({ task }) => {
   const router = useRouter();
   const updateTaskMutation = useUpdateTask();
+  // Retrieve the tasks store updater to update our local state optimistically.
+  const { tasks, setTasks } = useTasksStore();
+
+  const handleUnarchive = () => {
+    updateTaskMutation.mutate(
+      { id: task.id, isArchived: false },
+      {
+        onSuccess: () => {
+          // Optimistically remove the task from the archived list.
+          setTasks(tasks.filter((t: Task) => t.id !== task.id));
+          showAlert({
+            message: 'Task unarchived successfully.',
+            type: 'success',
+            title: 'Unarchived',
+          });
+        },
+      }
+    );
+  };
 
   return (
     <TouchableOpacity
@@ -41,13 +60,8 @@ const ArchivedTaskItem: React.FC<{ task: Task }> = ({ task }) => {
           </CustomText>
         )}
       </TouchableOpacity>
-      {/* Unarchive button: calls mutation */}
-      <TouchableOpacity
-        onPress={() =>
-          updateTaskMutation.mutate({ id: task.id, isArchived: false })
-        }
-        className="ml-2"
-      >
+      {/* Unarchive button with efficient API call */}
+      <TouchableOpacity onPress={handleUnarchive} className="ml-2">
         <MaterialIcons name="unarchive" size={24} color={Colors.PRIMARY_TEXT} />
       </TouchableOpacity>
     </TouchableOpacity>
