@@ -1,0 +1,73 @@
+# Ignore Python bytecode files
+*.pyc
+*.pyo
+__pycache__/
+
+# Ignore environment-specific settings
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Ignore distribution and packaging directories
+build/
+dist/
+*.egg-info/
+*.egg
+*.manifest
+*.spec
+
+# Ignore log files
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Ignore coverage reports
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+
+# Ignore mypy type checker
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ignore pyre type checker
+.pyre/
+
+# Ignore pytype static type analyzer
+.pytype/
+
+# Ignore Cython debug symbols
+cython_debug/
+
+# Ignore PyCharm project settings
+.idea/
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore Sublime Text settings
+*.sublime-workspace
+*.sublime-project
+
+# Ignore JetBrains specific files
+# Uncomment the following line if you use JetBrains IDEs
+# .idea/
+
+# Ignore ruff cache
+.ruff_cache/
+
+# Ignore Python Packaging
+.pdm.toml
+.pdm-python
+.pdm-build/
+__pypackages__/
+
+# Ignore macOS Finder files
+.DS_Store

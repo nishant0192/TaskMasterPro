@@ -1,0 +1,17 @@
+# Web Framework and ASGI server
+fastapi==0.100.0
+uvicorn==0.23.0
+
+# Environment variable management
+python-dotenv==1.0.1
+
+# Machine Learning and Data Processing
+scikit-learn==1.6.1
+pandas==2.0.1
+numpy==1.24.2
+
+# Database Migration (if using Alembic for AI DB migrations)
+alembic==1.12.1
+
+# PostgreSQL adapter (if AI service connects directly to a PostgreSQL database)
+psycopg2-binary==2.9.6
