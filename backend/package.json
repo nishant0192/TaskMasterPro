@@ -6,6 +6,7 @@
     "main": "dist/server.js",
     "scripts": {
         "dev": "cross-env NODE_NO_WARNINGS=1 nodemon --watch src --ext ts,js --exec \"node --loader ts-node/esm\" src/server.ts",
+        "worker:dev": "nodemon --watch src/jobs --ext ts --exec \"node --loader ts-node/esm\" src/jobs/notificationWorker.ts",
         "start": "cross-env NODE_ENV=production dotenv -e .env.production node dist/server.js",
         "build": "tsc",
         "prisma:generate:dev": "cross-env NODE_ENV=development dotenv -e .env.development npx prisma generate",
@@ -23,6 +24,7 @@
         "@prisma/client": "^6.5.0",
         "@trpc/server": "^10.45.2",
         "bcrypt": "^5.1.1",
+        "bull": "^4.16.5",
         "chalk": "4.0.0",
         "cloudinary": "^2.6.0",
         "cookie-parser": "^1.4.7",
@@ -33,6 +35,7 @@
         "express": "^4.21.2",
         "jsonwebtoken": "^9.0.2",
         "module-alias": "^2.2.3",
+        "node-fetch": "^3.3.2",
         "streamifier": "^0.1.1",
         "uuid": "^11.1.0",
         "zod": "^3.24.2"

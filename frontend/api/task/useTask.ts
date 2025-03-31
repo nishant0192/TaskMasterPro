@@ -18,6 +18,8 @@ import {
   createAttachment,
   getAttachments,
   deleteAttachment,
+  deleteComment,
+  updateComment,
 } from './task';
 
 /* ----- Task Hooks ----- */
@@ -139,14 +141,21 @@ export function useCompleteTask(): UseMutationResult<
 }
 
 export function useDeleteTask(): UseMutationResult<
-  any,
+  { success: boolean },
   Error,
   { id: string },
   { previousTasks: any }
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data) => deleteTask(data),
+    mutationFn: async (data) => {
+      const res = await deleteTask(data);
+      // Check if the backend returned success
+      if (!res || !res.success) {
+        throw new Error('Deletion failed');
+      }
+      return res;
+    },
     onMutate: async (data) => {
       await queryClient.cancelQueries({ queryKey: ['tasks'] });
       const previousTasks = queryClient.getQueryData(['tasks']);
@@ -234,14 +243,54 @@ export function useAddComment(): UseMutationResult<
   return useMutation({
     mutationFn: async (data) => addComment(data),
     onSuccess: () => {
+      // Invalidate or refetch comments (depending on your query key strategy)
       queryClient.invalidateQueries({ queryKey: ['comments'] });
     },
   });
 }
 
+/**
+ * Hook to retrieve comments for a task.
+ */
 export function useGetComments(taskId: string): UseMutationResult<any, Error, void, unknown> {
   return useMutation({
-    mutationFn: () => getComments({ taskId })
+    mutationFn: () => getComments({ taskId }),
+  });
+}
+
+/**
+ * Hook to update a comment.
+ */
+export function useUpdateComment(): UseMutationResult<
+  any,
+  Error,
+  { id: string; content: string },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data) => updateComment(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comments'] });
+    },
+  });
+}
+
+/**
+ * Hook to delete a comment.
+ */
+export function useDeleteComment(): UseMutationResult<
+  any,
+  Error,
+  { id: string },
+  unknown
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data) => deleteComment(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comments'] });
+    },
   });
 }
 

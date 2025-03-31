@@ -1,35 +1,49 @@
-// CreateTaskScreen.tsx
 import React, { useState } from 'react';
-import { SafeAreaView, Alert, View, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView, View, TouchableOpacity, ScrollView } from 'react-native';
 import CustomText from '@/components/CustomText';
 import CustomButton from '@/components/CustomButton';
 import StyledInput from '@/components/StyledInput';
 import CustomDatePicker from '@/components/CustomDatePicker';
-import { useCreateTask, useCreateAttachment } from '@/api/task/useTask';
+import { useCreateTask, useCreateAttachment, useAddComment } from '@/api/task/useTask';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
-import { AntDesign, MaterialIcons } from '@expo/vector-icons';
+import { AntDesign, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import { showAlert, showDialog } from '@/components/CustomAlert';
 
 export default function CreateTaskScreen() {
+  // Task fields
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('');
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [reminderAt, setReminderAt] = useState<Date | undefined>(undefined);
+
+  // DatePicker visibility states (using datetime mode now)
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [reminderPickerVisible, setReminderPickerVisible] = useState(false);
+
+  // Subtasks now hold an object with title and optional reminderAt.
   const [newSubtask, setNewSubtask] = useState('');
-  const [subtasks, setSubtasks] = useState<string[]>([]);
+  const [newSubtaskReminder, setNewSubtaskReminder] = useState<Date | undefined>(undefined);
+  const [subtasks, setSubtasks] = useState<{ title: string; reminderAt?: Date }[]>([]);
+  const [showNewSubtaskDatePicker, setShowNewSubtaskDatePicker] = useState(false);
+
+  // Attachments state
   const [attachments, setAttachments] = useState<{ name: string; uri: string }[]>([]);
+
+  // New: Initial comment state for the task (optional)
+  const [initialComment, setInitialComment] = useState('');
 
   const router = useRouter();
   const { mutate: createTask, status } = useCreateTask();
   const { mutate: createAttachment } = useCreateAttachment();
+  // New: Hook to add a comment
+  const { mutate: addComment } = useAddComment();
   const isMutating = status === 'pending';
 
-  // Function to add a new attachment via DocumentPicker.
+  // Add attachment via DocumentPicker.
   const handleAddNewAttachment = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({});
@@ -42,24 +56,35 @@ export default function CreateTaskScreen() {
       }
     } catch (err) {
       console.error('Attachment error:', err);
-      Alert.alert('Error', 'Failed to add attachment');
+      showAlert({ message: 'Failed to add attachment', type: 'error', title: 'Error' });
     }
   };
 
+  // Create task handler.
   const handleCreateTask = async () => {
-    if (!title) {
-      Alert.alert('Error', 'Title is required');
+    if (isMutating) return; // Prevent duplicate submissions
+    if (!title.trim()) {
+      showAlert({ message: 'Title is required', type: 'error', title: 'Error' });
+      return;
+    }
+    if (!description.trim() || description.trim().length < 5) {
+      showAlert({ message: 'Description must be at least 5 characters', type: 'error', title: 'Error' });
       return;
     }
 
-    // Create the task without attachments
+    // Build the payload including subtasks with optional reminder
     const payload = {
-      title,
-      description,
+      title: title.trim(),
+      description: description.trim(),
       dueDate: dueDate ? dueDate.toISOString() : undefined,
       priority: priority ? Number(priority) : undefined,
       reminderAt: reminderAt ? reminderAt.toISOString() : undefined,
-      subtasks: subtasks.length > 0 ? subtasks.map((st) => ({ title: st })) : undefined,
+      subtasks: subtasks.length > 0
+        ? subtasks.map((st) => ({
+          title: st.title,
+          reminderAt: st.reminderAt ? st.reminderAt.toISOString() : undefined,
+        }))
+        : undefined,
     };
 
     createTask(payload, {
@@ -76,35 +101,45 @@ export default function CreateTaskScreen() {
               createAttachment({
                 taskId,
                 fileName: att.name,
-                fileData: fileData,
+                fileData,
               });
             })
           );
         }
-        router.push('/task/TaskListScreen');
+        // New: If an initial comment was provided, add it.
+        if (taskId && initialComment.trim()) {
+          addComment({ taskId, content: initialComment.trim() });
+        }
+        router.replace('/task/TaskListScreen');
       },
       onError: (err) => {
         console.error('Error creating task', err);
-        Alert.alert('Error', 'Failed to create task');
+        showAlert({ message: 'Failed to create task', type: 'error', title: 'Error' });
       },
     });
   };
 
+  // Add subtask with optional reminder.
   const addSubtask = () => {
     if (!newSubtask.trim()) {
-      Alert.alert('Error', 'Subtask title cannot be empty');
+      showAlert({ message: 'Subtask title cannot be empty', type: 'error', title: 'Error' });
       return;
     }
-    setSubtasks((prev) => [...prev, newSubtask.trim()]);
+    setSubtasks((prev) => [
+      ...prev,
+      { title: newSubtask.trim(), reminderAt: newSubtaskReminder },
+    ]);
     setNewSubtask('');
+    setNewSubtaskReminder(undefined);
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.PRIMARY_BACKGROUND, padding: 24 }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 160 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 16 }}>
-          Create Task
-        </CustomText>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 160 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
         {/* Title Input */}
         <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT }}>
@@ -124,6 +159,7 @@ export default function CreateTaskScreen() {
             neutralBorderColor: Colors.DIVIDER,
           }}
           style={{ marginBottom: 16 }}
+          editable={!isMutating}
         />
 
         {/* Description Input */}
@@ -135,7 +171,7 @@ export default function CreateTaskScreen() {
           labelText="Description"
           value={description}
           onChangeText={setDescription}
-          placeholder="Task description"
+          placeholder="Task description (min 5 characters)"
           keyboardType="default"
           multiline
           numberOfLines={10}
@@ -146,11 +182,12 @@ export default function CreateTaskScreen() {
             neutralBorderColor: Colors.DIVIDER,
           }}
           style={{ marginBottom: 16 }}
+          editable={!isMutating}
         />
 
-        {/* Due Date Picker */}
+        {/* Due Date & Time Picker */}
         <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 8 }}>
-          Due Date:
+          Due Date & Time:
         </CustomText>
         <TouchableOpacity
           onPress={() => setDatePickerVisible(true)}
@@ -166,16 +203,17 @@ export default function CreateTaskScreen() {
             alignItems: 'center',
             marginBottom: 16,
           }}
+          disabled={isMutating}
         >
           <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-            {dueDate ? dueDate.toLocaleDateString() : 'Select Due Date'}
+            {dueDate ? dueDate.toLocaleString() : 'Select Due Date & Time'}
           </CustomText>
           <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
         </TouchableOpacity>
 
-        {/* Reminder Picker */}
+        {/* Task Reminder Picker */}
         <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 8 }}>
-          Reminder:
+          Task Reminder (Date & Time):
         </CustomText>
         <TouchableOpacity
           onPress={() => setReminderPickerVisible(true)}
@@ -191,9 +229,10 @@ export default function CreateTaskScreen() {
             alignItems: 'center',
             marginBottom: 16,
           }}
+          disabled={isMutating}
         >
           <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-            {reminderAt ? reminderAt.toLocaleDateString() : 'Select Reminder Date'}
+            {reminderAt ? reminderAt.toLocaleString() : 'Select Reminder Date & Time'}
           </CustomText>
           <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
         </TouchableOpacity>
@@ -228,6 +267,7 @@ export default function CreateTaskScreen() {
             neutralBorderColor: Colors.DIVIDER,
           }}
           style={{ marginBottom: 16 }}
+          editable={!isMutating}
         />
 
         {/* Subtasks Section */}
@@ -248,19 +288,43 @@ export default function CreateTaskScreen() {
             neutralBorderColor: Colors.DIVIDER,
           }}
           style={{ marginBottom: 8 }}
+          editable={!isMutating}
         />
+        {/* New Subtask Reminder Picker */}
+        <TouchableOpacity
+          onPress={() => setShowNewSubtaskDatePicker(true)}
+          style={{
+            paddingVertical: 10,
+            paddingHorizontal: 16,
+            borderWidth: 1,
+            borderColor: Colors.DIVIDER,
+            borderRadius: 8,
+            justifyContent: 'center',
+            backgroundColor: Colors.SECONDARY_BACKGROUND,
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 8,
+          }}
+          disabled={isMutating}
+        >
+          <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
+            {newSubtaskReminder ? newSubtaskReminder.toLocaleString() : 'Set Subtask Reminder (Date & Time)'}
+          </CustomText>
+          <AntDesign name="calendar" size={24} color={Colors.PRIMARY_TEXT} />
+        </TouchableOpacity>
         <CustomButton
           title="Add Subtask"
           onPress={addSubtask}
           style={{ backgroundColor: Colors.ACCENT, paddingVertical: 8, borderRadius: 6, marginBottom: 16 }}
           textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold' }}
+          disabled={isMutating}
         />
         {subtasks.length > 0 && (
           <View style={{ marginBottom: 16 }}>
-            {subtasks.map((subtask, index) => (
+            {subtasks.map((st, index) => (
               <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 4 }}>
                 <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-                  {subtask}
+                  {st.title} {st.reminderAt ? `- Reminder: ${st.reminderAt.toLocaleString()}` : ''}
                 </CustomText>
                 <TouchableOpacity onPress={() => setSubtasks((prev) => prev.filter((_, i) => i !== index))}>
                   <MaterialIcons name="delete" size={20} color={Colors.ERROR} />
@@ -279,21 +343,29 @@ export default function CreateTaskScreen() {
           onPress={handleAddNewAttachment}
           style={{ backgroundColor: Colors.ACCENT, paddingVertical: 8, borderRadius: 6, marginBottom: 16 }}
           textStyle={{ color: Colors.PRIMARY_TEXT, textAlign: 'center', fontWeight: 'bold' }}
+          disabled={isMutating}
         />
-        {attachments.length > 0 && (
-          <View style={{ marginBottom: 16 }}>
-            {attachments.map((att, index) => (
-              <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 4 }}>
-                <CustomText variant="headingSmall" style={{ color: Colors.PRIMARY_TEXT, flex: 1 }}>
-                  {att.name}
-                </CustomText>
-                <TouchableOpacity onPress={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}>
-                  <MaterialIcons name="delete" size={20} color={Colors.ERROR} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
+
+        {/* New: Initial Comment Section */}
+        <CustomText variant="headingMedium" style={{ color: Colors.PRIMARY_TEXT, marginBottom: 8 }}>
+          Initial Comment:
+        </CustomText>
+        <StyledInput
+          mode="outlined"
+          labelText="Comment"
+          value={initialComment}
+          onChangeText={setInitialComment}
+          placeholder="Enter an optional comment"
+          keyboardType="default"
+          colors={{
+            backgroundColor: Colors.SECONDARY_BACKGROUND,
+            textColor: Colors.PRIMARY_TEXT,
+            placeholderTextColor: Colors.SECONDARY_TEXT,
+            neutralBorderColor: Colors.DIVIDER,
+          }}
+          style={{ marginBottom: 16 }}
+          editable={!isMutating}
+        />
       </ScrollView>
 
       {/* Sticky Create Task Button */}
@@ -315,14 +387,16 @@ export default function CreateTaskScreen() {
           fontWeight: 'bold',
           fontSize: 20,
         }}
+        disabled={isMutating}
+        icon={<Ionicons name="create-outline" size={24} color={Colors.PRIMARY_TEXT} style={{ paddingBottom: 2 }} />}
       />
 
-      {/* Updated DatePicker using the latest component API (isVisible instead of visible) */}
+      {/* Due Date & Time Picker */}
       {datePickerVisible && (
         <CustomDatePicker
           visible={datePickerVisible}
           date={dueDate || new Date()}
-          mode="date"
+          mode="datetime"
           minimumDate={new Date()}
           onConfirm={(date: Date) => {
             setDueDate(date);
@@ -332,17 +406,33 @@ export default function CreateTaskScreen() {
         />
       )}
 
+      {/* Task Reminder Picker */}
       {reminderPickerVisible && (
         <CustomDatePicker
           visible={reminderPickerVisible}
           date={reminderAt || new Date()}
-          mode="date"
+          mode="datetime"
           minimumDate={new Date()}
           onConfirm={(date: Date) => {
             setReminderAt(date);
             setReminderPickerVisible(false);
           }}
           onCancel={() => setReminderPickerVisible(false)}
+        />
+      )}
+
+      {/* New Subtask Reminder Picker */}
+      {showNewSubtaskDatePicker && (
+        <CustomDatePicker
+          visible={showNewSubtaskDatePicker}
+          date={newSubtaskReminder || new Date()}
+          mode="datetime"
+          minimumDate={new Date()}
+          onConfirm={(date: Date) => {
+            setNewSubtaskReminder(date);
+            setShowNewSubtaskDatePicker(false);
+          }}
+          onCancel={() => setShowNewSubtaskDatePicker(false)}
         />
       )}
     </SafeAreaView>
