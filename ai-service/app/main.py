@@ -1,18 +1,45 @@
 # ai-service/app/main.py
+import uvicorn
 from fastapi import FastAPI
-from app.api.endpoints import predict, training, batch
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.core.config import settings
+from app.db.base import engine, SQLModel
+from app.api.endpoints import predict, train, rag, batch
+
+# Create tables (use Alembic for real migrations)
+SQLModel.metadata.create_all(engine)
 
 app = FastAPI(
-    title="AI Service for TaskMasterPro",
-    description="Provides prediction, training, and batch processing for TaskMasterPro",
-    version="1.0.0"
+    title=settings.PROJECT_NAME,
+    version="1.0.0",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
 )
 
-# Include API routers from different endpoints
-app.include_router(predict.router, prefix="/api")
-app.include_router(training.router, prefix="/api")
-app.include_router(batch.router, prefix="/api")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount routers
+app.include_router(predict.router, prefix=f"{settings.API_V1_STR}/predict", tags=["predict"])
+app.include_router(train.router,   prefix=f"{settings.API_V1_STR}/train",   tags=["train"])
+app.include_router(rag.router,     prefix=f"{settings.API_V1_STR}/rag",     tags=["rag"])
+app.include_router(batch.router,   prefix=f"{settings.API_V1_STR}/batch",   tags=["batch"])
+
+@app.get(f"{settings.API_V1_STR}/health", tags=["health"])
+async def health_check():
+    return {"status": "ok"}
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "app.main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        log_level=settings.LOG_LEVEL.lower(),
+        reload=settings.RELOAD,
+    )
