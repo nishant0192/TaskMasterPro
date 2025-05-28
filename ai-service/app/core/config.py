@@ -1,48 +1,179 @@
 # ai-service/app/core/config.py
+from functools import lru_cache
+from typing import List, Optional, Any, Dict
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 import os
-from typing import List
-
-from pydantic import BaseSettings, AnyHttpUrl, validator
 
 class Settings(BaseSettings):
-    API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "TaskMasterPro AI Service"
-
+    # Application
+    app_name: str = "TaskMaster Pro AI Service"
+    version: str = "1.0.0"
+    debug: bool = Field(default=False, env="DEBUG")
+    environment: str = Field(default="development", env="ENVIRONMENT")
+    
     # Server
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
-    RELOAD: bool = False
-    LOG_LEVEL: str = "INFO"
-
-    # CORS
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
-
+    port: int = Field(default=8001, env="PORT")
+    host: str = Field(default="0.0.0.0", env="HOST")
+    max_workers: int = Field(default=1, env="MAX_WORKERS")
+    
+    # Security
+    allowed_origins: List[str] = Field(
+        default=["http://localhost:3000", "http://127.0.0.1:3000"],
+        env="ALLOWED_ORIGINS"
+    )
+    jwt_secret: str = Field(default="your-super-secret-jwt-key", env="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
+    
     # Database
-    AI_DATABASE_URL: str
-
-    # Model paths
-    MODEL_DIR: str = "./models"
-    FINE_TUNED_MODEL_NAME: str = "fine_tuned_model"
-    OPTIMIZED_MODEL_NAME: str = "optimized_model.pth"
-
-    # ChromaDB / RAG
-    EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
-    GENERATOR_MODEL_NAME: str = "t5-small"
-    CHROMA_DB_HOST: str = "localhost"
-    CHROMA_DB_PORT: int = 8000
-
-    # Celery
-    CELERY_BROKER_URL: str = "redis://redis:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
-
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v):
-        if isinstance(v, str) and v:
-            return [i.strip() for i in v.split(",")]
+    ai_database_url: str = Field(
+        default="postgresql+asyncpg://ai_user:ai_password_dev@localhost:5433/taskmaster_ai",
+        env="AI_DATABASE_URL"
+    )
+    database_pool_size: int = Field(default=10, env="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=20, env="DATABASE_MAX_OVERFLOW")
+    
+    # Redis
+    redis_url: str = Field(default="redis://localhost:6380/0", env="REDIS_URL")
+    celery_broker_url: str = Field(default="redis://localhost:6380/1", env="CELERY_BROKER_URL")
+    celery_result_backend: str = Field(default="redis://localhost:6380/2", env="CELERY_RESULT_BACKEND")
+    
+    # AI Models
+    model_cache_dir: str = Field(default="./models", env="MODEL_CACHE_DIR")
+    pretrained_models_dir: str = Field(default="./models/pretrained", env="PRETRAINED_MODELS_DIR")
+    user_models_dir: str = Field(default="./models/user_models", env="USER_MODELS_DIR")
+    embedding_model_name: str = Field(default="all-MiniLM-L6-v2", env="EMBEDDING_MODEL_NAME")
+    spacy_model_name: str = Field(default="en_core_web_sm", env="SPACY_MODEL_NAME")
+    
+    # AI Configuration
+    enable_advanced_ai: bool = Field(default=True, env="ENABLE_ADVANCED_AI")
+    enable_model_training: bool = Field(default=True, env="ENABLE_MODEL_TRAINING")
+    enable_batch_processing: bool = Field(default=True, env="ENABLE_BATCH_PROCESSING")
+    enable_personalization: bool = Field(default=True, env="ENABLE_PERSONALIZATION")
+    
+    # Performance
+    max_model_memory_mb: int = Field(default=2048, env="MAX_MODEL_MEMORY_MB")
+    model_cache_ttl_seconds: int = Field(default=3600, env="MODEL_CACHE_TTL_SECONDS")
+    embedding_cache_size: int = Field(default=10000, env="EMBEDDING_CACHE_SIZE")
+    batch_size: int = Field(default=32, env="BATCH_SIZE")
+    max_concurrent_predictions: int = Field(default=10, env="MAX_CONCURRENT_PREDICTIONS")
+    
+    # Training
+    min_training_samples: int = Field(default=10, env="MIN_TRAINING_SAMPLES")
+    max_training_samples: int = Field(default=10000, env="MAX_TRAINING_SAMPLES")
+    training_validation_split: float = Field(default=0.2, env="TRAINING_VALIDATION_SPLIT")
+    model_retrain_threshold: float = Field(default=0.1, env="MODEL_RETRAIN_THRESHOLD")  # Accuracy drop threshold
+    
+    # Personalization
+    personalization_learning_rate: float = Field(default=0.01, env="PERSONALIZATION_LEARNING_RATE")
+    user_model_update_frequency_hours: int = Field(default=24, env="USER_MODEL_UPDATE_FREQUENCY_HOURS")
+    cold_start_threshold_days: int = Field(default=7, env="COLD_START_THRESHOLD_DAYS")
+    
+    # Logging
+    log_level: str = Field(default="INFO", env="LOG_LEVEL")
+    log_file: Optional[str] = Field(default=None, env="LOG_FILE")
+    log_format: str = Field(
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        env="LOG_FORMAT"
+    )
+    enable_structured_logging: bool = Field(default=True, env="ENABLE_STRUCTURED_LOGGING")
+    
+    # Monitoring
+    enable_metrics: bool = Field(default=True, env="ENABLE_METRICS")
+    metrics_port: int = Field(default=9090, env="METRICS_PORT")
+    
+    # External APIs (for bootstrapping/fallback)
+    openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
+    huggingface_api_key: Optional[str] = Field(default=None, env="HUGGINGFACE_API_KEY")
+    enable_external_apis: bool = Field(default=False, env="ENABLE_EXTERNAL_APIS")
+    
+    # Data Storage
+    data_cache_dir: str = Field(default="./data/cache", env="DATA_CACHE_DIR")
+    embeddings_cache_dir: str = Field(default="./data/embeddings", env="EMBEDDINGS_CACHE_DIR")
+    training_data_dir: str = Field(default="./data/training", env="TRAINING_DATA_DIR")
+    
+    # Feature Flags
+    enable_nlp_personalization: bool = Field(default=True, env="ENABLE_NLP_PERSONALIZATION")
+    enable_smart_scheduling: bool = Field(default=True, env="ENABLE_SMART_SCHEDULING")
+    enable_predictive_analytics: bool = Field(default=True, env="ENABLE_PREDICTIVE_ANALYTICS")
+    enable_behavioral_learning: bool = Field(default=True, env="ENABLE_BEHAVIORAL_LEARNING")
+    enable_cross_user_learning: bool = Field(default=False, env="ENABLE_CROSS_USER_LEARNING")  # Privacy-preserving
+    
+    @validator('allowed_origins', pre=True)
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
         return v
-
+    
+    @validator('log_level')
+    def validate_log_level(cls, v):
+        valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        if v.upper() not in valid_levels:
+            raise ValueError(f'Log level must be one of: {valid_levels}')
+        return v.upper()
+    
+    @validator('training_validation_split')
+    def validate_training_split(cls, v):
+        if not 0 < v < 1:
+            raise ValueError('Training validation split must be between 0 and 1')
+        return v
+    
+    @validator('personalization_learning_rate')
+    def validate_learning_rate(cls, v):
+        if not 0 < v <= 1:
+            raise ValueError('Learning rate must be between 0 and 1')
+        return v
+    
     class Config:
         env_file = ".env"
-        env_file_encoding = "utf-8"
+        case_sensitive = False
+        
+    @property
+    def database_url_sync(self) -> str:
+        """Synchronous database URL for migrations"""
+        return self.ai_database_url.replace("+asyncpg", "")
+    
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
+    
+    @property
+    def is_development(self) -> bool:
+        return self.environment.lower() == "development"
+    
+    def get_model_config(self) -> Dict[str, Any]:
+        """Get AI model configuration"""
+        return {
+            "embedding_model": self.embedding_model_name,
+            "spacy_model": self.spacy_model_name,
+            "cache_dir": self.model_cache_dir,
+            "max_memory_mb": self.max_model_memory_mb,
+            "batch_size": self.batch_size,
+            "enable_training": self.enable_model_training,
+            "enable_personalization": self.enable_personalization
+        }
+    
+    def get_database_config(self) -> Dict[str, Any]:
+        """Get database configuration"""
+        return {
+            "url": self.ai_database_url,
+            "pool_size": self.database_pool_size,
+            "max_overflow": self.database_max_overflow,
+            "echo": self.debug
+        }
+    
+    def get_redis_config(self) -> Dict[str, Any]:
+        """Get Redis configuration"""
+        return {
+            "url": self.redis_url,
+            "broker_url": self.celery_broker_url,
+            "result_backend": self.celery_result_backend
+        }
 
-settings = Settings()
+@lru_cache()
+def get_settings() -> Settings:
+    """Get cached settings instance"""
+    return Settings()
+
+# Export commonly used settings
+settings = get_settings()

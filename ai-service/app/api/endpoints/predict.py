@@ -1,21 +1,17 @@
-# ai-service/app/api/endpoints/predict.py
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.prediction_service import PredictionService
+from app.schemas.predict import PredictRequest, PredictResponse
+from app.services.inference import run_inference
+from app.db.session import get_db
 
 router = APIRouter()
-prediction_service = PredictionService()
 
-class PredictRequest(BaseModel):
-    text: str
-
-class PredictResponse(BaseModel):
-    predicted_priority: int
 
 @router.post("/", response_model=PredictResponse)
-def predict(req: PredictRequest):
+async def predict(request: PredictRequest, db: AsyncSession = Depends(get_db)):
     try:
-        return prediction_service.predict(req.text)
+        preds = await run_inference(request.texts, top_k=request.top_k)
+        return PredictResponse(results=preds)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

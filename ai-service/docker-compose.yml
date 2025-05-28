@@ -1,0 +1,169 @@
+# ai-service/docker-compose.yml
+version: "3.8"
+
+services:
+  # PostgreSQL with pgvector extension
+  ai-postgres:
+    image: pgvector/pgvector:pg15
+    container_name: ai-postgres
+    environment:
+      POSTGRES_DB: taskmaster_ai
+      POSTGRES_USER: ai_user
+      POSTGRES_PASSWORD: ai_password_dev
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"
+    volumes:
+      - ai_postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_user -d taskmaster_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and job queues
+  ai-redis:
+    image: redis:7.2-alpine
+    container_name: ai-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - ai_redis_data:/data
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # AI Service
+  ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-service
+    environment:
+      # Database
+      AI_DATABASE_URL: postgresql+asyncpg://ai_user:ai_password_dev@ai-postgres:5432/taskmaster_ai
+
+      # Redis
+      REDIS_URL: redis://ai-redis:6379/0
+      CELERY_BROKER_URL: redis://ai-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://ai-redis:6379/2
+
+      # App settings
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      ENVIRONMENT: development
+
+      # JWT (should match main backend)
+      JWT_SECRET: your-super-secret-jwt-key
+      JWT_ALGORITHM: HS256
+
+      # AI Settings
+      MODEL_CACHE_DIR: /app/models
+      ENABLE_ADVANCED_AI: "true"
+      ENABLE_MODEL_TRAINING: "true"
+
+      # Performance
+      MAX_WORKERS: 2
+      BATCH_SIZE: 32
+
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      ai-postgres:
+        condition: service_healthy
+      ai-redis:
+        condition: service_healthy
+    networks:
+      - ai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker for background tasks
+  ai-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-worker
+    environment:
+      # Same as ai-service
+      AI_DATABASE_URL: postgresql+asyncpg://ai_user:ai_password_dev@ai-postgres:5432/taskmaster_ai
+      REDIS_URL: redis://ai-redis:6379/0
+      CELERY_BROKER_URL: redis://ai-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://ai-redis:6379/2
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      ENVIRONMENT: development
+      MODEL_CACHE_DIR: /app/models
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      ai-postgres:
+        condition: service_healthy
+      ai-redis:
+        condition: service_healthy
+    networks:
+      - ai-network
+    command:
+      [
+        "celery",
+        "-A",
+        "app.core.celery_app",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=2",
+      ]
+    restart: unless-stopped
+
+  # Celery Beat for scheduled tasks
+  ai-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-scheduler
+    environment:
+      # Same as ai-service
+      AI_DATABASE_URL: postgresql+asyncpg://ai_user:ai_password_dev@ai-postgres:5432/taskmaster_ai
+      REDIS_URL: redis://ai-redis:6379/0
+      CELERY_BROKER_URL: redis://ai-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://ai-redis:6379/2
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      ENVIRONMENT: development
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      ai-postgres:
+        condition: service_healthy
+      ai-redis:
+        condition: service_healthy
+    networks:
+      - ai-network
+    command: ["celery", "-A", "app.core.celery_app", "beat", "--loglevel=info"]
+    restart: unless-stopped
+
+volumes:
+  ai_postgres_data:
+  ai_redis_data:
+
+networks:
+  ai-network:
+    driver: bridge
