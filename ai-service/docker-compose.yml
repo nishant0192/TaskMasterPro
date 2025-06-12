@@ -1,169 +1,215 @@
-# ai-service/docker-compose.yml
-version: "3.8"
+version: '3.8'
 
 services:
-  # PostgreSQL with pgvector extension
-  ai-postgres:
-    image: pgvector/pgvector:pg15
-    container_name: ai-postgres
-    environment:
-      POSTGRES_DB: taskmaster_ai
-      POSTGRES_USER: ai_user
-      POSTGRES_PASSWORD: ai_password_dev
-      POSTGRES_HOST_AUTH_METHOD: trust
-    ports:
-      - "5433:5432"
-    volumes:
-      - ai_postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - ai-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ai_user -d taskmaster_ai"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # Redis for caching and job queues
-  ai-redis:
-    image: redis:7.2-alpine
-    container_name: ai-redis
-    ports:
-      - "6380:6379"
-    volumes:
-      - ai_redis_data:/data
-    networks:
-      - ai-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # AI Service
+  # AI Service Application
   ai-service:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: ai-service
-    environment:
-      # Database
-      AI_DATABASE_URL: postgresql+asyncpg://ai_user:ai_password_dev@ai-postgres:5432/taskmaster_ai
-
-      # Redis
-      REDIS_URL: redis://ai-redis:6379/0
-      CELERY_BROKER_URL: redis://ai-redis:6379/1
-      CELERY_RESULT_BACKEND: redis://ai-redis:6379/2
-
-      # App settings
-      DEBUG: "true"
-      LOG_LEVEL: INFO
-      ENVIRONMENT: development
-
-      # JWT (should match main backend)
-      JWT_SECRET: your-super-secret-jwt-key
-      JWT_ALGORITHM: HS256
-
-      # AI Settings
-      MODEL_CACHE_DIR: /app/models
-      ENABLE_ADVANCED_AI: "true"
-      ENABLE_MODEL_TRAINING: "true"
-
-      # Performance
-      MAX_WORKERS: 2
-      BATCH_SIZE: 32
-
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_ENV: ${BUILD_ENV:-development}
+    container_name: taskmaster-ai-service
     ports:
-      - "8001:8001"
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+      - AI_DATABASE_URL=postgresql+asyncpg://aiuser:aipass@postgres:5432/taskmaster_ai
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MODEL_CACHE_DIR=/app/models
+      - ENABLE_MODEL_TRAINING=true
+      - ENABLE_PERSONALIZATION=true
+      - MAX_MODEL_MEMORY_MB=4096
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ai_models:/app/models
+      - ai_cache:/app/cache
+      - ai_logs:/app/logs
+      - ./app:/app/app:ro  # Development mode
     depends_on:
-      ai-postgres:
+      postgres:
         condition: service_healthy
-      ai-redis:
+      redis:
         condition: service_healthy
     networks:
       - ai-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/ai/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
-  # Celery Worker for background tasks
-  ai-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ai-worker
+  # PostgreSQL Database with pgvector
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: taskmaster-postgres
     environment:
-      # Same as ai-service
-      AI_DATABASE_URL: postgresql+asyncpg://ai_user:ai_password_dev@ai-postgres:5432/taskmaster_ai
-      REDIS_URL: redis://ai-redis:6379/0
-      CELERY_BROKER_URL: redis://ai-redis:6379/1
-      CELERY_RESULT_BACKEND: redis://ai-redis:6379/2
-      DEBUG: "true"
-      LOG_LEVEL: INFO
-      ENVIRONMENT: development
-      MODEL_CACHE_DIR: /app/models
+      - POSTGRES_DB=taskmaster_ai
+      - POSTGRES_USER=aiuser
+      - POSTGRES_PASSWORD=aipass
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "5432:5432"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./logs:/app/logs
-    depends_on:
-      ai-postgres:
-        condition: service_healthy
-      ai-redis:
-        condition: service_healthy
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
     networks:
       - ai-network
-    command:
-      [
-        "celery",
-        "-A",
-        "app.core.celery_app",
-        "worker",
-        "--loglevel=info",
-        "--concurrency=2",
-      ]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiuser -d taskmaster_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and task queue
+  redis:
+    image: redis:7-alpine
+    container_name: taskmaster-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - ai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Celery Worker for background tasks
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_ENV: ${BUILD_ENV:-development}
+    container_name: taskmaster-celery-worker
+    command: celery -A app.core.celery worker --loglevel=info --concurrency=4
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - AI_DATABASE_URL=postgresql+asyncpg://aiuser:aipass@postgres:5432/taskmaster_ai
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    volumes:
+      - ai_models:/app/models
+      - ai_cache:/app/cache
+      - ai_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - ai-network
     restart: unless-stopped
 
   # Celery Beat for scheduled tasks
-  ai-scheduler:
+  celery-beat:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: ai-scheduler
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_ENV: ${BUILD_ENV:-development}
+    container_name: taskmaster-celery-beat
+    command: celery -A app.core.celery beat --loglevel=info
     environment:
-      # Same as ai-service
-      AI_DATABASE_URL: postgresql+asyncpg://ai_user:ai_password_dev@ai-postgres:5432/taskmaster_ai
-      REDIS_URL: redis://ai-redis:6379/0
-      CELERY_BROKER_URL: redis://ai-redis:6379/1
-      CELERY_RESULT_BACKEND: redis://ai-redis:6379/2
-      DEBUG: "true"
-      LOG_LEVEL: INFO
-      ENVIRONMENT: development
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - AI_DATABASE_URL=postgresql+asyncpg://aiuser:aipass@postgres:5432/taskmaster_ai
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ai_models:/app/models
+      - ./celerybeat-schedule:/app/celerybeat-schedule
     depends_on:
-      ai-postgres:
-        condition: service_healthy
-      ai-redis:
-        condition: service_healthy
+      - postgres
+      - redis
     networks:
       - ai-network
-    command: ["celery", "-A", "app.core.celery_app", "beat", "--loglevel=info"]
     restart: unless-stopped
 
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: taskmaster-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: taskmaster-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - ai-network
+    restart: unless-stopped
+
+  # Optional: Jupyter for data science and model development
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jupyter
+    container_name: taskmaster-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=your-secure-token
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ai_models:/home/jovyan/models
+    networks:
+      - ai-network
+    restart: unless-stopped
+    profiles:
+      - development
+
 volumes:
-  ai_postgres_data:
-  ai_redis_data:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ai_models:
+    driver: local
+  ai_cache:
+    driver: local
+  ai_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
 
 networks:
   ai-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

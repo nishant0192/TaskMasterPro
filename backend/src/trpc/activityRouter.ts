@@ -77,7 +77,7 @@ const getActivityLogs = protectedProcedure
     
     const logs = await prisma.auditLog.findMany({
       where,
-      orderBy: { timestamp: 'desc' },
+      orderBy: { createdAt: 'desc' },
       skip: input.skip,
       take: input.limit,
     });

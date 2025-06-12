@@ -1,54 +1,89 @@
-# ai-service/Dockerfile
-FROM python:3.11-slim
+# Build stage
+FROM python:3.11-slim as builder
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PIP_NO_CACHE_DIR=1
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+# Set build arguments
+ARG BUILD_ENV=production
+ARG APP_VERSION=1.0.0
 
-# Install system dependencies
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     build-essential \
-    curl \
+    gcc \
+    g++ \
     git \
-    postgresql-client \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app user
-RUN useradd --create-home --shell /bin/bash app
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Set work directory
-WORKDIR /app
+# Copy requirements and install Python dependencies
+COPY requirements.txt /tmp/requirements.txt
+COPY requirements-dev.txt /tmp/requirements-dev.txt
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies with optimizations
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
+    pip install --no-cache-dir -r /tmp/requirements.txt && \
+    if [ "$BUILD_ENV" = "development" ]; then \
+        pip install --no-cache-dir -r /tmp/requirements-dev.txt; \
+    fi
 
 # Download spaCy model
 RUN python -m spacy download en_core_web_sm
 
+# Production stage
+FROM python:3.11-slim
+
+# Set labels
+LABEL maintainer="your-team@company.com"
+LABEL version=${APP_VERSION}
+LABEL description="TaskMaster Pro AI Service"
+
+# Create non-root user
+RUN groupadd -r aiservice && useradd -r -g aiservice aiservice
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set work directory
+WORKDIR /app
+
 # Copy application code
-COPY . .
+COPY --chown=aiservice:aiservice app/ /app/
+COPY --chown=aiservice:aiservice scripts/ /app/scripts/
+COPY --chown=aiservice:aiservice alembic.ini /app/
+COPY --chown=aiservice:aiservice alembic/ /app/alembic/
 
 # Create necessary directories
-RUN mkdir -p /app/models/pretrained \
-             /app/models/user_models \
-             /app/data/cache \
-             /app/logs
+RUN mkdir -p /app/logs /app/models /app/cache && \
+    chown -R aiservice:aiservice /app
 
-# Set permissions
-RUN chown -R app:app /app
-USER app
+# Copy startup script
+COPY --chown=aiservice:aiservice scripts/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-# Expose port
-EXPOSE 8001
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8001/health || exit 1
+    CMD curl -f http://localhost:8000/api/v1/ai/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
+# Switch to non-root user
+USER aiservice
+
+# Expose port
+EXPOSE 8000
+
+# Default command
+CMD ["/app/start.sh"]

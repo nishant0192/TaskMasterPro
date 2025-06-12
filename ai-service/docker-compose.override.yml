@@ -1,0 +1,108 @@
+# ai-service/docker-compose.override.yml
+# Development overrides for AI service
+
+version: "3.8"
+
+services:
+  ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=true
+    volumes:
+      # Mount source code for hot reloading
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./alembic:/app/alembic
+      
+      # Mount model directories for persistence
+      - ai_models_dev:/app/models
+      - ai_data_dev:/app/data
+      - ai_logs_dev:/app/logs
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir /app
+      "
+
+  ai-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./app:/app/app
+      - ai_models_dev:/app/models
+      - ai_data_dev:/app/data
+      - ai_logs_dev:/app/logs
+    command: >
+      watchmedo auto-restart --recursive --pattern="*.py" --directory="/app" -- 
+      celery -A app.core.celery_app worker --loglevel=debug --concurrency=2
+
+  ai-postgres:
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=taskmaster_ai_dev
+      - POSTGRES_USER=ai_user_dev
+      - POSTGRES_PASSWORD=ai_password_dev
+
+  ai-redis:
+    ports:
+      - "6380:6379"
+    command: redis-server --loglevel debug
+
+  # Development tools
+  ai-notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ai-notebook
+    environment:
+      - AI_DATABASE_URL=postgresql://ai_user_dev:ai_password_dev@ai-postgres:5432/taskmaster_ai_dev
+      - REDIS_URL=redis://ai-redis:6379/0
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./app:/app/app
+      - ai_models_dev:/app/models
+      - ai_data_dev:/app/data
+    networks:
+      - ai-network
+    command: >
+      jupyter lab --ip=0.0.0.0 --port=8888 --no-browser 
+      --allow-root --NotebookApp.token='' --NotebookApp.password=''
+
+  # Model training container
+  ai-trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ai-trainer
+    environment:
+      - AI_DATABASE_URL=postgresql://ai_user_dev:ai_password_dev@ai-postgres:5432/taskmaster_ai_dev
+      - ENABLE_GPU=false
+      - TRAINING_MODE=development
+    volumes:
+      - ./app:/app/app
+      - ./training:/app/training
+      - ai_models_dev:/app/models
+      - ai_data_dev:/app/data
+    networks:
+      - ai-network
+    profiles:
+      - training
+    command: python -m training.train_models
+
+volumes:
+  ai_models_dev:
+  ai_data_dev:
+  ai_logs_dev:

@@ -6,6 +6,15 @@ import { logger } from '../utils/logger.js';
 import { uploadFile } from '../utils/upload.js';
 import { scheduleTaskNotification } from '../utils/scheduleNotification.js';
 import { v2 as cloudinary } from 'cloudinary';
+import {
+  prioritizeTasks,
+  predictTaskSuccess,
+  generateSubtasks,
+  processNaturalLanguage,
+  generateInsights,
+  getBehavioralInsights,
+  getAIServiceStatus,
+} from './aiProcedures.js';
 
 // Helper to unwrap input from nested tRPC envelope.
 const unwrapInput = (val: unknown) => {
@@ -918,6 +927,257 @@ const deleteAttachment = protectedProcedure
   });
 
 /* -----------------------------------------------
+ AI-POWERED PROCEDURES
+----------------------------------------------- */
+
+const aiPrioritizeTasks = prioritizeTasks;
+const aiPredictTaskSuccess = predictTaskSuccess;
+const aiGenerateSubtasks = generateSubtasks;
+const aiProcessNaturalLanguage = processNaturalLanguage;
+const aiGenerateInsights = generateInsights;
+const aiGetBehavioralInsights = getBehavioralInsights;
+const aiGetServiceStatus = getAIServiceStatus;
+
+/**
+ * Smart task scheduling using AI
+ */
+const aiGenerateSchedule = protectedProcedure
+  .input(z.object({
+    taskIds: z.array(z.string()),
+    constraints: z.object({
+      availableTimeSlots: z.array(z.object({
+        start: z.string(),
+        end: z.string(),
+        date: z.string(),
+      })),
+      workingHours: z.object({
+        start: z.string(),
+        end: z.string(),
+      }),
+      breakPreferences: z.object({
+        duration: z.number(),
+        frequency: z.number(),
+      }).optional(),
+    }),
+    preferences: z.object({
+      focusTimePreference: z.enum(['morning', 'afternoon', 'evening']).optional(),
+      maxContinuousWork: z.number().optional(),
+      preferredTaskGrouping: z.enum(['similar', 'mixed']).optional(),
+    }).optional(),
+  }))
+  .mutation(async ({ input, ctx }) => {
+    const userId = ctx.user.id;
+
+    try {
+      // Get tasks for scheduling
+      const tasks = await ctx.prisma.task.findMany({
+        where: {
+          id: { in: input.taskIds },
+          creatorId: userId,
+          isArchived: false,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        },
+      });
+
+      if (tasks.length === 0) {
+        throw new Error('No valid tasks found for scheduling');
+      }
+
+      // Transform tasks for AI service
+      const aiTasks = tasks.map(task => ({
+        id: task.id,
+        title: task.title,
+        estimatedDuration: task.estimatedDuration || 60, // Default 1 hour
+        priority: task.priority || 1,
+        dueDate: task.dueDate?.toISOString(),
+        dependencies: [], // Add if you have task dependencies
+      }));
+
+      // Call AI service
+      const { aiIntegrationService } = await import('../services/aiIntegrationService.js');
+      const result = await aiIntegrationService.generateSchedule({
+        tasks: aiTasks,
+        constraints: input.constraints,
+        preferences: input.preferences,
+      });
+
+      // Log the operation
+      await createAuditLog({
+        action: 'AI_SCHEDULE_GENERATION',
+        description: `AI generated schedule for ${tasks.length} tasks`,
+        entityType: 'Task',
+        entityId: userId,
+        ctx,
+      });
+
+      return {
+        success: result.success,
+        data: result.data,
+        fallback: result.fallback,
+        error: result.error,
+        metadata: {
+          tasksScheduled: tasks.length,
+          scheduleGenerated: result.success,
+        },
+      };
+
+    } catch (error) {
+      logger.error(`AI schedule generation failed for user ${userId}:`, error);
+      throw new Error(
+        error instanceof Error ? error.message : 'Failed to generate schedule'
+      );
+    }
+  });
+
+/**
+ * Bulk AI operations for multiple tasks
+ */
+const aiBulkOptimize = protectedProcedure
+  .input(z.object({
+    taskIds: z.array(z.string()),
+    operations: z.array(z.enum(['prioritize', 'predict', 'schedule'])),
+    preferences: z.object({
+      updatePriorities: z.boolean().default(true),
+      generateSchedule: z.boolean().default(false),
+      includeInsights: z.boolean().default(true),
+    }).optional(),
+  }))
+  .mutation(async ({ input, ctx }) => {
+    const userId = ctx.user.id;
+    const startTime = Date.now();
+
+    try {
+      const results: any = {
+        prioritization: null,
+        predictions: null,
+        schedule: null,
+        insights: null,
+        errors: [],
+      };
+
+      // Get tasks
+      const tasks = await ctx.prisma.task.findMany({
+        where: {
+          id: { in: input.taskIds },
+          creatorId: userId,
+          isArchived: false,
+        },
+      });
+
+      if (tasks.length === 0) {
+        throw new Error('No tasks found for bulk optimization');
+      }
+
+      const { aiIntegrationService } = await import('../services/aiIntegrationService.js');
+
+      // Run prioritization if requested
+      if (input.operations.includes('prioritize')) {
+        try {
+          const aiTasks = tasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            description: task.description || undefined,
+            dueDate: task.dueDate?.toISOString(),
+            priority: task.priority || 1,
+            status: task.status,
+          }));
+
+          const prioritizationResult = await aiIntegrationService.prioritizeTasks({
+            tasks: aiTasks,
+          });
+
+          results.prioritization = prioritizationResult;
+
+          // Update priorities if successful and requested
+          if (prioritizationResult.success && input.preferences?.updatePriorities) {
+            const updates = prioritizationResult.data.prioritizedTasks.map((task: any) =>
+              ctx.prisma.task.update({
+                where: { id: task.id },
+                data: { priority: Math.round(task.aiPriorityScore * 10) },
+              })
+            );
+            await ctx.prisma.$transaction(updates);
+          }
+        } catch (error) {
+          results.errors.push(`Prioritization failed: ${error}`);
+        }
+      }
+
+      // Run predictions if requested
+      if (input.operations.includes('predict')) {
+        try {
+          const aiTasks = tasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            priority: task.priority || 1,
+            estimatedDuration: task.estimatedDuration || 60,
+            dueDate: task.dueDate?.toISOString(),
+          }));
+
+          const predictionResult = await aiIntegrationService.predictTaskSuccess({
+            tasks: aiTasks,
+          });
+
+          results.predictions = predictionResult;
+        } catch (error) {
+          results.errors.push(`Predictions failed: ${error}`);
+        }
+      }
+
+      // Generate insights if requested
+      if (input.preferences?.includeInsights) {
+        try {
+          const insightsResult = await aiIntegrationService.generateInsights(userId, {
+            analysisTypes: ['productivity', 'optimization'],
+            includeRecommendations: true,
+          });
+
+          results.insights = insightsResult;
+        } catch (error) {
+          results.errors.push(`Insights failed: ${error}`);
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      // Log bulk operation
+      await createAuditLog({
+        action: 'AI_BULK_OPTIMIZATION',
+        description: `Bulk AI optimization on ${tasks.length} tasks: ${input.operations.join(', ')}`,
+        entityType: 'Task',
+        entityId: userId,
+        ctx,
+      });
+
+      logger.info(`Bulk AI optimization completed in ${duration}ms for user ${userId}`);
+
+      return {
+        success: results.errors.length === 0,
+        data: results,
+        metadata: {
+          tasksProcessed: tasks.length,
+          operationsRequested: input.operations,
+          operationsCompleted: input.operations.filter(op =>
+            !results.errors.some((err: string) => err.toLowerCase().includes(op))
+          ),
+          processingTime: duration,
+          errorsEncountered: results.errors.length,
+        },
+      };
+
+    } catch (error) {
+      logger.error(`Bulk AI optimization failed for user ${userId}:`, error);
+      throw new Error(
+        error instanceof Error ? error.message : 'Bulk optimization failed'
+      );
+    }
+  });
+
+/* -----------------------------------------------
+   EXPORT UPDATED ROUTER WITH AI PROCEDURES
+----------------------------------------------- */
+
+/* -----------------------------------------------
    EXPORT ROUTER
 ----------------------------------------------- */
 
@@ -941,6 +1201,19 @@ export const taskRouter = router({
   createAttachment,
   getAttachments,
   deleteAttachment,
+  ai: router({
+    prioritizeTasks: aiPrioritizeTasks,
+    predictTaskSuccess: aiPredictTaskSuccess,
+    generateSubtasks: aiGenerateSubtasks,
+    processNaturalLanguage: aiProcessNaturalLanguage,
+    generateSchedule: aiGenerateSchedule,
+    generateInsights: aiGenerateInsights,
+    getBehavioralInsights: aiGetBehavioralInsights,
+    bulkOptimize: aiBulkOptimize,
+    getServiceStatus: aiGetServiceStatus,
+  }),
 });
+
+
 
 export default taskRouter;

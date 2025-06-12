@@ -1,4 +1,4 @@
-# ai-service/app/core/config.py
+# ai-service/app/core/config.py - Fixed version
 from functools import lru_cache
 from typing import List, Optional, Any, Dict
 from pydantic import Field, validator
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", env="ENVIRONMENT")
     
     # Server
-    port: int = Field(default=8001, env="PORT")
+    port: int = Field(default=8000, env="PORT")
     host: str = Field(default="0.0.0.0", env="HOST")
     max_workers: int = Field(default=1, env="MAX_WORKERS")
     
@@ -25,11 +25,24 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="your-super-secret-jwt-key", env="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
     
+    # Backend CORS origins (from your error)
+    backend_cors_origins: str = Field(
+        default="http://localhost:3000,https://your-frontend.app",
+        env="backend_cors_origins"
+    )
+    
     # Database
     ai_database_url: str = Field(
         default="postgresql+asyncpg://ai_user:ai_password_dev@localhost:5433/taskmaster_ai",
         env="AI_DATABASE_URL"
     )
+    
+    # Alternative database URL field (from your error)
+    database_url: str = Field(
+        default="postgresql+asyncpg://user:password@localhost:5432/ai_service",
+        env="database_url"
+    )
+    
     database_pool_size: int = Field(default=10, env="DATABASE_POOL_SIZE")
     database_max_overflow: int = Field(default=20, env="DATABASE_MAX_OVERFLOW")
     
@@ -42,8 +55,16 @@ class Settings(BaseSettings):
     model_cache_dir: str = Field(default="./models", env="MODEL_CACHE_DIR")
     pretrained_models_dir: str = Field(default="./models/pretrained", env="PRETRAINED_MODELS_DIR")
     user_models_dir: str = Field(default="./models/user_models", env="USER_MODELS_DIR")
+    
+    # Model paths (from your error)
+    model_path: str = Field(default="/models/latest", env="model_path")
+    vector_store_path: str = Field(default="/models/vectors", env="vector_store_path")
+    
     embedding_model_name: str = Field(default="all-MiniLM-L6-v2", env="EMBEDDING_MODEL_NAME")
     spacy_model_name: str = Field(default="en_core_web_sm", env="SPACY_MODEL_NAME")
+    
+    # Gemini API (from your error)
+    gemini_api_key: str = Field(default="", env="gemini_api_key")
     
     # AI Configuration
     enable_advanced_ai: bool = Field(default=True, env="ENABLE_ADVANCED_AI")
@@ -62,7 +83,7 @@ class Settings(BaseSettings):
     min_training_samples: int = Field(default=10, env="MIN_TRAINING_SAMPLES")
     max_training_samples: int = Field(default=10000, env="MAX_TRAINING_SAMPLES")
     training_validation_split: float = Field(default=0.2, env="TRAINING_VALIDATION_SPLIT")
-    model_retrain_threshold: float = Field(default=0.1, env="MODEL_RETRAIN_THRESHOLD")  # Accuracy drop threshold
+    model_retrain_threshold: float = Field(default=0.1, env="MODEL_RETRAIN_THRESHOLD")
     
     # Personalization
     personalization_learning_rate: float = Field(default=0.01, env="PERSONALIZATION_LEARNING_RATE")
@@ -82,7 +103,7 @@ class Settings(BaseSettings):
     enable_metrics: bool = Field(default=True, env="ENABLE_METRICS")
     metrics_port: int = Field(default=9090, env="METRICS_PORT")
     
-    # External APIs (for bootstrapping/fallback)
+    # External APIs
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     huggingface_api_key: Optional[str] = Field(default=None, env="HUGGINGFACE_API_KEY")
     enable_external_apis: bool = Field(default=False, env="ENABLE_EXTERNAL_APIS")
@@ -97,12 +118,18 @@ class Settings(BaseSettings):
     enable_smart_scheduling: bool = Field(default=True, env="ENABLE_SMART_SCHEDULING")
     enable_predictive_analytics: bool = Field(default=True, env="ENABLE_PREDICTIVE_ANALYTICS")
     enable_behavioral_learning: bool = Field(default=True, env="ENABLE_BEHAVIORAL_LEARNING")
-    enable_cross_user_learning: bool = Field(default=False, env="ENABLE_CROSS_USER_LEARNING")  # Privacy-preserving
+    enable_cross_user_learning: bool = Field(default=False, env="ENABLE_CROSS_USER_LEARNING")
     
     @validator('allowed_origins', pre=True)
     def parse_cors_origins(cls, v):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
+        return v
+    
+    @validator('backend_cors_origins', pre=True)
+    def parse_backend_cors_origins(cls, v):
+        if isinstance(v, str):
+            return v  # Keep as string for now
         return v
     
     @validator('log_level')
@@ -127,6 +154,8 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        # Allow extra fields to prevent validation errors
+        extra = "allow"
         
     @property
     def database_url_sync(self) -> str:
