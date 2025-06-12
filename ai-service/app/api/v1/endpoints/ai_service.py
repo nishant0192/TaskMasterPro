@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Any, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Internal imports
 from app.core.security import get_current_user
@@ -817,5 +817,414 @@ async def get_ai_service_status():
                 "status": "degraded",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
+            }
+        )
+
+
+@router.post("/predict-task-success")
+async def predict_task_success_post(
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user_mock)
+):
+    """
+    Predict task completion success probability (POST version)
+    Expected by Node.js backend
+    """
+    try:
+        user_id = current_user["id"]
+        tasks = request.get("tasks", [])
+        historical_data = request.get("historicalData", {})
+        prediction_horizon = request.get("predictionHorizon", 7)
+
+        logger.info(f"Predicting task success for {len(tasks)} tasks")
+
+        predictions = []
+        for task in tasks:
+            # Mock prediction logic
+            base_success_rate = 0.75
+            priority_factor = (task.get("priority", 3) / 5.0) * 0.2
+            duration_factor = min(
+                0.1, (task.get("estimatedDuration", 60) / 180.0)) * 0.1
+
+            success_probability = base_success_rate + priority_factor - duration_factor
+            success_probability = max(0.1, min(0.95, success_probability))
+
+            predictions.append({
+                "taskId": task.get("id"),
+                "successProbability": success_probability,
+                "confidenceScore": 0.8,
+                "riskFactors": [
+                    "High complexity" if task.get(
+                        "estimatedDuration", 0) > 120 else "Manageable scope",
+                    "Time pressure" if task.get(
+                        "priority", 3) >= 4 else "Normal priority"
+                ],
+                "recommendations": [
+                    "Break into smaller tasks" if task.get(
+                        "estimatedDuration", 0) > 120 else "Proceed as planned",
+                    "Schedule during peak hours" if task.get(
+                        "priority", 3) >= 4 else "Flexible scheduling"
+                ]
+            })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "predictions": predictions,
+                    "overallSuccessRate": sum(p["successProbability"] for p in predictions) / len(predictions) if predictions else 0,
+                    "analysisDate": datetime.now().isoformat(),
+                    "predictionHorizon": prediction_horizon
+                },
+                "metadata": {
+                    "tasksAnalyzed": len(tasks),
+                    "historicalDataUsed": bool(historical_data),
+                    "processingTime": 50
+                }
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Task success prediction failed: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "error": str(e),
+                "fallback": {
+                    "predictions": [],
+                    "message": "Prediction service temporarily unavailable"
+                }
+            }
+        )
+
+
+@router.post("/generate-subtasks")
+async def generate_subtasks(
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user_mock)
+):
+    """
+    Generate subtasks using AI
+    Expected by Node.js backend
+    """
+    try:
+        user_id = current_user["id"]
+        task_title = request.get("taskTitle", "")
+        task_description = request.get("taskDescription", "")
+        complexity = request.get("complexity", "medium")
+        max_subtasks = request.get("maxSubtasks", 5)
+
+        logger.info(f"Generating subtasks for: {task_title}")
+
+        # Mock subtask generation based on complexity
+        complexity_multiplier = {"low": 2, "medium": 4, "high": 6}
+        num_subtasks = min(
+            max_subtasks, complexity_multiplier.get(complexity, 4))
+
+        subtasks = []
+        base_actions = [
+            "Research and gather information",
+            "Create initial draft/outline",
+            "Review and analyze requirements",
+            "Develop core components",
+            "Test and validate results",
+            "Finalize and document"
+        ]
+
+        for i in range(num_subtasks):
+            if i < len(base_actions):
+                title = f"{base_actions[i]} for {task_title.lower()}"
+            else:
+                title = f"Additional work item {i+1} for {task_title.lower()}"
+
+            subtasks.append({
+                "title": title,
+                "order": i + 1,
+                "estimatedDuration": 30 + (i * 15),
+                "description": f"Auto-generated subtask based on task complexity: {complexity}"
+            })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "subtasks": subtasks,
+                    "reasoning": f"Generated {len(subtasks)} subtasks based on {complexity} complexity level",
+                    "confidence": 0.75
+                },
+                "metadata": {
+                    "originalTask": task_title,
+                    "complexity": complexity,
+                    "subtasksGenerated": len(subtasks)
+                }
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Subtask generation failed: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "error": str(e),
+                "fallback": {
+                    "subtasks": [
+                        {"title": f"Break down: {request.get('taskTitle', 'task')}", "order": 1}
+                    ]
+                }
+            }
+        )
+
+
+@router.post("/process-natural-language")
+async def process_natural_language(
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user_mock)
+):
+    """
+    Process natural language input to extract tasks
+    Expected by Node.js backend
+    """
+    try:
+        user_id = current_user["id"]
+        text = request.get("text", "")
+        context = request.get("context", "")
+        extraction_types = request.get("extractionTypes", ["tasks"])
+
+        logger.info(f"Processing NLP input: {text[:50]}...")
+
+        # Mock NLP processing
+        extracted_tasks = []
+
+        # Simple keyword-based extraction (in production, use proper NLP)
+        task_indicators = ["need to", "have to",
+                           "must", "should", "plan to", "remind me to"]
+        sentences = text.split(". ")
+
+        for sentence in sentences:
+            if any(indicator in sentence.lower() for indicator in task_indicators):
+                # Extract potential task
+                task_text = sentence.strip()
+
+                # Try to extract due date
+                due_date = None
+                if "tomorrow" in sentence.lower():
+                    due_date = (datetime.now() + timedelta(days=1)).isoformat()
+                elif "next week" in sentence.lower():
+                    due_date = (datetime.now() + timedelta(days=7)).isoformat()
+
+                # Determine priority
+                priority = 3  # default
+                if any(word in sentence.lower() for word in ["urgent", "asap", "immediately"]):
+                    priority = 5
+                elif any(word in sentence.lower() for word in ["important", "critical"]):
+                    priority = 4
+
+                extracted_tasks.append({
+                    "title": task_text,
+                    "description": f"Extracted from: {context}" if context else None,
+                    "priority": priority,
+                    "dueDate": due_date,
+                    "estimatedDuration": 60  # default 1 hour
+                })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "extractedTasks": extracted_tasks,
+                    "confidence": 0.7,
+                    "extractionTypes": extraction_types
+                },
+                "metadata": {
+                    "inputText": text[:100],
+                    "tasksExtracted": len(extracted_tasks),
+                    "processingTime": 80
+                }
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"NLP processing failed: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "error": str(e),
+                "fallback": {
+                    "extractedTasks": [],
+                    "message": "NLP service temporarily unavailable"
+                }
+            }
+        )
+
+
+@router.post("/generate-schedule")
+async def generate_schedule(
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user_mock)
+):
+    """
+    Generate optimized schedule for tasks
+    Expected by Node.js backend
+    """
+    try:
+        user_id = current_user["id"]
+        tasks = request.get("tasks", [])
+        constraints = request.get("constraints", {})
+        preferences = request.get("preferences", {})
+
+        logger.info(f"Generating schedule for {len(tasks)} tasks")
+
+        # Mock schedule generation
+        available_slots = constraints.get("availableTimeSlots", [])
+        working_hours = constraints.get(
+            "workingHours", {"start": "09:00", "end": "17:00"})
+
+        scheduled_tasks = []
+        current_time = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+
+        for i, task in enumerate(tasks):
+            duration = task.get("estimatedDuration", 60)
+
+            # Schedule task
+            start_time = current_time + \
+                timedelta(minutes=i * 90)  # 90 min slots
+            end_time = start_time + timedelta(minutes=duration)
+
+            scheduled_tasks.append({
+                "taskId": task.get("id"),
+                "title": task.get("title"),
+                "scheduledStart": start_time.isoformat(),
+                "scheduledEnd": end_time.isoformat(),
+                "estimatedDuration": duration,
+                "priority": task.get("priority", 3),
+                "confidence": 0.8
+            })
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "scheduledTasks": scheduled_tasks,
+                    "optimization": {
+                        "efficiency": 0.85,
+                        "conflicts": 0,
+                        "bufferTime": 30
+                    },
+                    "recommendations": [
+                        "Schedule high-priority tasks during peak energy hours",
+                        "Include buffer time between tasks"
+                    ]
+                },
+                "metadata": {
+                    "tasksScheduled": len(scheduled_tasks),
+                    "totalDuration": sum(task.get("estimatedDuration", 60) for task in tasks),
+                    "optimizationTime": 120
+                }
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Schedule generation failed: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "error": str(e),
+                "fallback": {
+                    "scheduledTasks": [],
+                    "message": "Schedule optimization temporarily unavailable"
+                }
+            }
+        )
+
+
+@router.post("/generate-insights")
+async def generate_insights(
+    user_id: str,
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user_mock)
+):
+    """
+    Generate insights for user
+    Expected by Node.js backend with user_id as path parameter
+    """
+    try:
+        time_period = request.get("timePeriod", {})
+        analysis_types = request.get("analysisTypes", ["productivity"])
+        include_recommendations = request.get("includeRecommendations", True)
+
+        logger.info(f"Generating insights for user {user_id}")
+
+        # Mock insights generation
+        insights = []
+
+        if "productivity" in analysis_types:
+            insights.append({
+                "type": "productivity",
+                "title": "Peak Productivity Hours",
+                "description": "You're most productive between 9-11 AM",
+                "confidence": 0.85,
+                "impact": "high",
+                "data": {"peak_hours": "9-11 AM", "efficiency": 0.92}
+            })
+
+        if "patterns" in analysis_types:
+            insights.append({
+                "type": "pattern",
+                "title": "Task Completion Pattern",
+                "description": "You tend to complete 75% of tasks within estimated time",
+                "confidence": 0.78,
+                "impact": "medium",
+                "data": {"completion_rate": 0.75, "time_accuracy": 0.82}
+            })
+
+        recommendations = []
+        if include_recommendations:
+            recommendations = [
+                "Schedule important tasks during your peak hours (9-11 AM)",
+                "Consider breaking larger tasks into smaller chunks",
+                "Add 20% buffer time to task estimates"
+            ]
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "data": {
+                    "insights": insights,
+                    "recommendations": recommendations,
+                    "summary": {
+                        "totalInsights": len(insights),
+                        "analysisTypes": analysis_types,
+                        "confidenceScore": 0.81
+                    }
+                },
+                "metadata": {
+                    "userId": user_id,
+                    "timePeriod": time_period,
+                    "generatedAt": datetime.now().isoformat()
+                }
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Insights generation failed: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "error": str(e),
+                "fallback": {
+                    "insights": [],
+                    "recommendations": ["Continue using the app to build your insights"],
+                    "message": "Insights service temporarily unavailable"
+                }
             }
         )

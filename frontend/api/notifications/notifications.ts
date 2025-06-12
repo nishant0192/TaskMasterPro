@@ -1,7 +1,7 @@
 // frontend/app/api/notifications/notifications.ts
 import { fetchWithAuth } from '@/api/fetchWithAuth';
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://192.168.29.16:3000';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://192.168.29.74:3000';
 
 /**
  * Registers the Expo push token on the backend.

@@ -401,7 +401,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Include API routers
 app.include_router(
     ai_router,
-    prefix="/api/v1/ai",
+    prefix="/api/v1",
     tags=["AI Services"]
 )
 
@@ -444,7 +444,7 @@ async def root():
             "health": "/health",
             "metrics": "/metrics",
             "api_docs": "/docs" if settings.debug else "Contact admin",
-            "api_base": "/api/v1/ai"
+            "api_base": "/api/v1"
         }
     }
 

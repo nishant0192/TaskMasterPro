@@ -406,3 +406,40 @@ export async function createWebAuditLog({
         userAgent: req?.get?.('User-Agent'),
     });
 }
+
+
+export async function createAuditLogForDeletion({
+    action,
+    description,
+    entityType,
+    entityId,
+    ctx,
+    metadata,
+    skipTaskConnection = false,
+}: CreateAuditLogParams & {
+    skipTaskConnection?: boolean;
+}): Promise<void> {
+    try {
+        const metadataValue = metadata ? metadata as Prisma.InputJsonValue : Prisma.JsonNull;
+
+        // For deletions, we don't want to connect to the entity being deleted
+        await prisma.auditLog.create({
+            data: {
+                action,
+                description,
+                entityType,
+                entityId,
+                metadata: metadataValue,
+                user: { connect: { id: ctx.user.id } },
+                // Only connect to task if we're not deleting it and skipTaskConnection is false
+                task: (entityType === 'Task' && entityId && !skipTaskConnection) ? undefined : 
+                      (entityType !== 'Task' && entityId) ? { connect: { id: entityId } } : undefined,
+            },
+        });
+
+        logger.debug(`Audit log created for deletion: ${action} by user ${ctx.user.id}`);
+    } catch (error) {
+        logger.error('Failed to create audit log for deletion:', error);
+        // Don't throw error to avoid breaking the main operation
+    }
+}
