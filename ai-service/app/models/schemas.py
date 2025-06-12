@@ -1,5 +1,10 @@
-# app/models/schemas.py
-from pydantic import BaseModel, Field, validator
+# ai-service/app/models/schemas.py
+"""
+Database models and validation schemas
+Production-ready with proper validation and SQLAlchemy models
+"""
+
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime, date
 from enum import Enum
@@ -43,6 +48,11 @@ class TaskBase(BaseModel):
     estimated_duration: Optional[int] = None  # in minutes
     category: Optional[str] = None
     tags: List[str] = []
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class CalendarEvent(BaseModel):
     id: str
@@ -93,7 +103,8 @@ class NLPRequest(BaseModel):
     context: Optional[Dict[str, Any]] = {}
     user_timezone: str = "UTC"
     
-    @validator('text')
+    @field_validator('text')
+    @classmethod
     def validate_text(cls, v):
         if not v.strip():
             raise ValueError('Text cannot be empty')
@@ -139,12 +150,12 @@ class ScheduleTimeBlock(BaseModel):
     end_time: datetime
     confidence_score: float = Field(..., ge=0, le=1)
     flexibility_score: float = Field(..., ge=0, le=1)
-    energy_level_required: str = Field("medium", regex="^(low|medium|high)$")
+    energy_level_required: str = Field("medium", pattern="^(low|medium|high)$")
 
 class ProductivityInsight(BaseModel):
     metric: str
     value: float
-    trend: str = Field(..., regex="^(increasing|decreasing|stable)$")
+    trend: str = Field(..., pattern="^(increasing|decreasing|stable)$")
     description: str
     recommendation: Optional[str] = None
 
@@ -185,7 +196,7 @@ class Insight(BaseModel):
     type: str  # "productivity", "time_management", "goal_progress"
     title: str
     description: str
-    severity: str = Field(..., regex="^(low|medium|high|critical)$")
+    severity: str = Field(..., pattern="^(low|medium|high|critical)$")
     actionable: bool = True
     created_at: datetime
 
@@ -194,16 +205,16 @@ class Recommendation(BaseModel):
     title: str
     description: str
     impact_score: float = Field(..., ge=0, le=1)
-    effort_required: str = Field(..., regex="^(low|medium|high)$")
+    effort_required: str = Field(..., pattern="^(low|medium|high)$")
     category: str
     action_items: List[str] = []
 
 class Trend(BaseModel):
     metric: str
-    direction: str = Field(..., regex="^(up|down|stable)$")
+    direction: str = Field(..., pattern="^(up|down|stable)$")
     change_percentage: float
     time_period: str
-    significance: str = Field(..., regex="^(low|medium|high)$")
+    significance: str = Field(..., pattern="^(low|medium|high)$")
 
 class GoalProgress(BaseModel):
     goal_id: str
@@ -231,7 +242,7 @@ class TaskCompletionPrediction(BaseModel):
 
 class RiskFactor(BaseModel):
     factor: str
-    impact: str = Field(..., regex="^(low|medium|high|critical)$")
+    impact: str = Field(..., pattern="^(low|medium|high|critical)$")
     description: str
     mitigation_suggestions: List[str] = []
 
@@ -245,7 +256,7 @@ class PredictionResponse(BaseModel):
 
 class BatchJobResponse(BaseModel):
     job_id: str
-    status: str = Field(..., regex="^(PENDING|RUNNING|COMPLETED|FAILED)$")
+    status: str = Field(..., pattern="^(PENDING|RUNNING|COMPLETED|FAILED)$")
     created_at: datetime
     estimated_completion: Optional[datetime] = None
     progress_percentage: Optional[float] = Field(None, ge=0, le=100)
@@ -328,7 +339,7 @@ class AIInsight(Base):
     description = Column(Text, nullable=False)
     severity = Column(String, nullable=False, default="medium")
     actionable = Column(Boolean, nullable=False, default=True)
-    metadata = Column(JSONB, nullable=True)
+    insight_metadata = Column(JSONB, nullable=True)  # Fixed: renamed from 'metadata'
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
     is_dismissed = Column(Boolean, nullable=False, default=False)
@@ -357,7 +368,7 @@ class CreateBatchJobSchema(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 class UpdateBatchJobSchema(BaseModel):
-    status: Optional[str] = Field(None, regex="^(PENDING|RUNNING|COMPLETED|FAILED)$")
+    status: Optional[str] = Field(None, pattern="^(PENDING|RUNNING|COMPLETED|FAILED)$")
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     details: Optional[Dict[str, Any]] = None

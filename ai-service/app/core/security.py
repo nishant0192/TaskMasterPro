@@ -1,6 +1,6 @@
 # ai-service/app/core/security.py
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

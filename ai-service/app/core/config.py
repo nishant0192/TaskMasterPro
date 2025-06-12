@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     
     # Database
     ai_database_url: str = Field(
-        default="postgresql+asyncpg://ai_user:ai_password_dev@localhost:5433/taskmaster_ai",
+        default="postgresql+asyncpg://postgres:nishant%3F%40980@localhost:5432/taskmasterpro",
         env="AI_DATABASE_URL"
     )
     

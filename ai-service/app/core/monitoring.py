@@ -1,528 +1,547 @@
 # ai-service/app/core/monitoring.py
 """
-Production monitoring and observability for AI service
-Handles metrics, logging, alerts, and performance tracking
+AI Service Monitoring and Metrics Collection
+Production-ready monitoring with performance tracking and alerting
 """
 
-import asyncio
-import logging
 import time
+import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
 from collections import defaultdict, deque
+from dataclasses import dataclass, asdict
+import asyncio
 import json
-import psutil
-import GPUtil
+from pathlib import Path
 
-# Monitoring libraries
-from prometheus_client import Counter, Histogram, Gauge, generate_latest
-import structlog
-
-# Internal imports
-from app.core.config import get_settings
-from app.core.database import get_async_session
-from app.models.ai_models import PredictionLog, AITrainingSession
-
-logger = structlog.get_logger(__name__)
-settings = get_settings()
-
-# Prometheus metrics
-PREDICTION_COUNTER = Counter(
-    'ai_predictions_total',
-    'Total number of AI predictions made',
-    ['user_id', 'prediction_type', 'model_version']
-)
-
-PREDICTION_LATENCY = Histogram(
-    'ai_prediction_duration_seconds',
-    'Time spent on AI predictions',
-    ['prediction_type']
-)
-
-MODEL_ACCURACY = Gauge(
-    'ai_model_accuracy',
-    'Current model accuracy score',
-    ['model_type', 'user_id']
-)
-
-ACTIVE_USERS = Gauge(
-    'ai_active_users',
-    'Number of active users with personalized models'
-)
-
-SYSTEM_RESOURCES = Gauge(
-    'ai_system_resource_usage',
-    'System resource usage',
-    ['resource_type']
-)
-
-TRAINING_DURATION = Histogram(
-    'ai_training_duration_seconds',
-    'Time spent on model training',
-    ['training_type']
-)
-
-ERROR_COUNTER = Counter(
-    'ai_errors_total',
-    'Total number of AI service errors',
-    ['error_type', 'component']
-)
+logger = logging.getLogger(__name__)
 
 @dataclass
-class PerformanceMetrics:
-    """Performance metrics snapshot"""
+class PerformanceMetric:
+    """Performance metric data point"""
     timestamp: datetime
-    prediction_latency_p95: float
-    prediction_accuracy: float
-    active_users: int
-    memory_usage_mb: float
-    cpu_usage_percent: float
-    gpu_usage_percent: float
-    error_rate: float
-    throughput_per_minute: float
+    value: float
+    operation: str
+    user_id: Optional[str] = None
+    metadata: Dict[str, Any] = None
 
 @dataclass
-class AlertCondition:
-    """Alert condition definition"""
-    name: str
-    metric: str
-    threshold: float
-    comparison: str  # 'gt', 'lt', 'eq'
-    duration_minutes: int
-    severity: str  # 'critical', 'warning', 'info'
-    description: str
+class ErrorEvent:
+    """Error event data"""
+    timestamp: datetime
+    error_type: str
+    component: str
+    message: str
+    user_id: Optional[str] = None
+    stack_trace: Optional[str] = None
+
+@dataclass
+class HealthStatus:
+    """Component health status"""
+    component: str
+    status: str  # healthy, degraded, unhealthy
+    last_check: datetime
+    response_time: float
+    error_count: int
+    details: Dict[str, Any] = None
 
 class AIServiceMonitor:
     """
-    Comprehensive monitoring system for AI service
+    Comprehensive monitoring for AI service components
+    Features:
+    - Performance metrics collection
+    - Error tracking and alerting
+    - Health status monitoring
+    - Resource usage tracking
+    - SLA monitoring
     """
     
     def __init__(self):
-        self.metrics_buffer = deque(maxlen=1000)
-        self.alert_conditions = []
-        self.active_alerts = {}
-        self.performance_history = deque(maxlen=100)
+        # Metrics storage
+        self.performance_metrics: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+        self.error_events: deque = deque(maxlen=500)
+        self.health_statuses: Dict[str, HealthStatus] = {}
         
-        # Performance tracking
-        self.prediction_times = defaultdict(list)
-        self.error_counts = defaultdict(int)
-        self.user_activity = defaultdict(int)
-        
-        # Health check status
-        self.component_health = {
-            'ai_engine': 'unknown',
-            'personalization_engine': 'unknown',
-            'database': 'unknown',
-            'models': 'unknown'
+        # Configuration
+        self.metrics_retention_hours = 24
+        self.health_check_interval = 300  # 5 minutes
+        self.alert_thresholds = {
+            'error_rate': 0.05,  # 5% error rate threshold
+            'response_time_p95': 2.0,  # 2 second p95 response time
+            'availability': 0.99  # 99% availability
         }
         
-        self._setup_alert_conditions()
+        # Counters
+        self.request_counter = 0
+        self.error_counter = 0
+        self.start_time = time.time()
         
-    def _setup_alert_conditions(self):
-        """Setup default alert conditions"""
-        self.alert_conditions = [
-            AlertCondition(
-                name="high_prediction_latency",
-                metric="prediction_latency_p95",
-                threshold=5.0,  # 5 seconds
-                comparison="gt",
-                duration_minutes=5,
-                severity="warning",
-                description="AI prediction latency is above acceptable threshold"
-            ),
-            AlertCondition(
-                name="low_model_accuracy",
-                metric="prediction_accuracy",
-                threshold=0.7,
-                comparison="lt",
-                duration_minutes=10,
-                severity="critical",
-                description="Model accuracy has dropped below acceptable level"
-            ),
-            AlertCondition(
-                name="high_error_rate",
-                metric="error_rate",
-                threshold=0.05,  # 5%
-                comparison="gt",
-                duration_minutes=3,
-                severity="critical",
-                description="Error rate is above 5%"
-            ),
-            AlertCondition(
-                name="high_memory_usage",
-                metric="memory_usage_mb",
-                threshold=8192,  # 8GB
-                comparison="gt",
-                duration_minutes=5,
-                severity="warning",
-                description="Memory usage is high"
-            ),
-            AlertCondition(
-                name="low_throughput",
-                metric="throughput_per_minute",
-                threshold=10,
-                comparison="lt",
-                duration_minutes=10,
-                severity="warning",
-                description="Prediction throughput is below expected levels"
-            )
-        ]
-
-    async def start_monitoring(self):
-        """Start the monitoring system"""
-        logger.info("🔍 Starting AI service monitoring...")
+        # Resource tracking
+        self.resource_usage = {
+            'memory_mb': 0,
+            'cpu_percent': 0,
+            'disk_usage_mb': 0,
+            'active_connections': 0
+        }
         
-        # Start background tasks
-        asyncio.create_task(self._metrics_collector())
-        asyncio.create_task(self._health_checker())
-        asyncio.create_task(self._alert_processor())
-        asyncio.create_task(self._performance_analyzer())
+        # SLA tracking
+        self.sla_metrics = {
+            'availability': 1.0,
+            'error_rate': 0.0,
+            'avg_response_time': 0.0,
+            'requests_per_minute': 0.0
+        }
         
-        logger.info("✅ AI service monitoring started")
-
-    async def _metrics_collector(self):
-        """Collect system and application metrics"""
-        while True:
-            try:
-                # Collect system metrics
-                memory_info = psutil.virtual_memory()
-                cpu_percent = psutil.cpu_percent(interval=1)
-                
-                # GPU metrics (if available)
-                gpu_usage = 0.0
-                try:
-                    gpus = GPUtil.getGPUs()
-                    if gpus:
-                        gpu_usage = sum(gpu.load for gpu in gpus) / len(gpus) * 100
-                except Exception:
-                    pass  # GPU monitoring optional
-                
-                # Update Prometheus metrics
-                SYSTEM_RESOURCES.labels(resource_type='memory_mb').set(
-                    memory_info.used / 1024 / 1024
-                )
-                SYSTEM_RESOURCES.labels(resource_type='cpu_percent').set(cpu_percent)
-                SYSTEM_RESOURCES.labels(resource_type='gpu_percent').set(gpu_usage)
-                
-                # Application metrics
-                active_users_count = len(set(self.user_activity.keys()))
-                ACTIVE_USERS.set(active_users_count)
-                
-                # Store performance snapshot
-                metrics = PerformanceMetrics(
-                    timestamp=datetime.now(),
-                    prediction_latency_p95=self._calculate_p95_latency(),
-                    prediction_accuracy=self._calculate_average_accuracy(),
-                    active_users=active_users_count,
-                    memory_usage_mb=memory_info.used / 1024 / 1024,
-                    cpu_usage_percent=cpu_percent,
-                    gpu_usage_percent=gpu_usage,
-                    error_rate=self._calculate_error_rate(),
-                    throughput_per_minute=self._calculate_throughput()
-                )
-                
-                self.performance_history.append(metrics)
-                
-                await asyncio.sleep(30)  # Collect every 30 seconds
-                
-            except Exception as e:
-                logger.error(f"Metrics collection failed: {e}")
-                await asyncio.sleep(60)
-
-    async def _health_checker(self):
-        """Check health of AI service components"""
-        while True:
-            try:
-                # Check database connectivity
-                try:
-                    async with get_async_session() as db:
-                        await db.execute("SELECT 1")
-                    self.component_health['database'] = 'healthy'
-                except Exception as e:
-                    self.component_health['database'] = 'unhealthy'
-                    logger.error(f"Database health check failed: {e}")
-                
-                # Check AI engine components
-                # This would check if models are loaded and responding
-                self.component_health['ai_engine'] = 'healthy'  # Placeholder
-                self.component_health['personalization_engine'] = 'healthy'  # Placeholder
-                self.component_health['models'] = 'healthy'  # Placeholder
-                
-                await asyncio.sleep(60)  # Check every minute
-                
-            except Exception as e:
-                logger.error(f"Health check failed: {e}")
-                await asyncio.sleep(60)
-
-    async def _alert_processor(self):
-        """Process alert conditions and trigger alerts"""
-        while True:
-            try:
-                if not self.performance_history:
-                    await asyncio.sleep(30)
-                    continue
-                
-                current_metrics = self.performance_history[-1]
-                
-                for condition in self.alert_conditions:
-                    await self._check_alert_condition(condition, current_metrics)
-                
-                await asyncio.sleep(60)  # Check alerts every minute
-                
-            except Exception as e:
-                logger.error(f"Alert processing failed: {e}")
-                await asyncio.sleep(60)
-
-    async def _check_alert_condition(self, condition: AlertCondition, 
-                                   metrics: PerformanceMetrics):
-        """Check if an alert condition is triggered"""
+        logger.info("📊 AI Service Monitor initialized")
+    
+    def record_performance_metric(self, operation: str, value: float, user_id: Optional[str] = None, **metadata):
+        """Record a performance metric"""
         try:
-            metric_value = getattr(metrics, condition.metric)
+            metric = PerformanceMetric(
+                timestamp=datetime.now(),
+                value=value,
+                operation=operation,
+                user_id=user_id,
+                metadata=metadata
+            )
             
-            # Check condition
-            triggered = False
-            if condition.comparison == 'gt':
-                triggered = metric_value > condition.threshold
-            elif condition.comparison == 'lt':
-                triggered = metric_value < condition.threshold
-            elif condition.comparison == 'eq':
-                triggered = metric_value == condition.threshold
+            self.performance_metrics[operation].append(metric)
             
-            alert_key = condition.name
+            # Update counters
+            if operation == 'request_duration':
+                self.request_counter += 1
             
-            if triggered:
-                if alert_key not in self.active_alerts:
-                    # New alert
-                    self.active_alerts[alert_key] = {
-                        'condition': condition,
-                        'first_triggered': datetime.now(),
-                        'last_triggered': datetime.now(),
-                        'trigger_count': 1,
-                        'current_value': metric_value
+            # Clean old metrics
+            self._cleanup_old_metrics()
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to record performance metric: {e}")
+    
+    def record_error(self, error_type: str, component: str, message: str = "", 
+                    user_id: Optional[str] = None, stack_trace: Optional[str] = None):
+        """Record an error event"""
+        try:
+            error_event = ErrorEvent(
+                timestamp=datetime.now(),
+                error_type=error_type,
+                component=component,
+                message=message,
+                user_id=user_id,
+                stack_trace=stack_trace
+            )
+            
+            self.error_events.append(error_event)
+            self.error_counter += 1
+            
+            # Log error
+            logger.warning(
+                f"🚨 Error recorded: {error_type} in {component}",
+                extra={
+                    'error_type': error_type,
+                    'component': component,
+                    'user_id': user_id
+                }
+            )
+            
+            # Check for alert conditions
+            self._check_alert_conditions()
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to record error: {e}")
+    
+    def update_health_status(self, component: str, status: str, response_time: float = 0.0, **details):
+        """Update component health status"""
+        try:
+            # Count recent errors for this component
+            cutoff_time = datetime.now() - timedelta(minutes=5)
+            recent_errors = sum(
+                1 for error in self.error_events
+                if error.component == component and error.timestamp > cutoff_time
+            )
+            
+            self.health_statuses[component] = HealthStatus(
+                component=component,
+                status=status,
+                last_check=datetime.now(),
+                response_time=response_time,
+                error_count=recent_errors,
+                details=details
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to update health status for {component}: {e}")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive health status"""
+        try:
+            # Calculate overall metrics
+            uptime = time.time() - self.start_time
+            error_rate = self.error_counter / max(1, self.request_counter)
+            
+            # Calculate response time statistics
+            response_times = [
+                metric.value for metric in self.performance_metrics.get('request_duration', [])
+                if metric.timestamp > datetime.now() - timedelta(hours=1)
+            ]
+            
+            avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+            p95_response_time = self._calculate_percentile(response_times, 95) if response_times else 0
+            
+            # Determine overall status
+            overall_status = "healthy"
+            if error_rate > self.alert_thresholds['error_rate']:
+                overall_status = "degraded"
+            if p95_response_time > self.alert_thresholds['response_time_p95']:
+                overall_status = "degraded"
+            
+            # Check component statuses
+            unhealthy_components = [
+                comp for comp, status in self.health_statuses.items()
+                if status.status == "unhealthy"
+            ]
+            if unhealthy_components:
+                overall_status = "unhealthy"
+            
+            return {
+                'status': overall_status,
+                'timestamp': datetime.now().isoformat(),
+                'uptime_seconds': uptime,
+                'metrics': {
+                    'requests_total': self.request_counter,
+                    'errors_total': self.error_counter,
+                    'error_rate': error_rate,
+                    'avg_response_time_ms': avg_response_time * 1000,
+                    'p95_response_time_ms': p95_response_time * 1000,
+                    'requests_per_minute': self._calculate_requests_per_minute()
+                },
+                'components': {
+                    comp: {
+                        'status': status.status,
+                        'last_check': status.last_check.isoformat(),
+                        'response_time_ms': status.response_time * 1000,
+                        'recent_errors': status.error_count
                     }
-                    
-                    # Check if alert should fire (duration threshold met)
-                    await asyncio.sleep(condition.duration_minutes * 60)
-                    if alert_key in self.active_alerts:
-                        await self._fire_alert(condition, metric_value)
-                else:
-                    # Update existing alert
-                    self.active_alerts[alert_key]['last_triggered'] = datetime.now()
-                    self.active_alerts[alert_key]['trigger_count'] += 1
-                    self.active_alerts[alert_key]['current_value'] = metric_value
+                    for comp, status in self.health_statuses.items()
+                },
+                'resource_usage': self.resource_usage,
+                'sla_compliance': self._calculate_sla_compliance()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get health status: {e}")
+            return {
+                'status': 'unknown',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+    
+    def get_performance_summary(self, operation: str, hours: int = 1) -> Dict[str, Any]:
+        """Get performance summary for specific operation"""
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            
+            relevant_metrics = [
+                metric for metric in self.performance_metrics.get(operation, [])
+                if metric.timestamp > cutoff_time
+            ]
+            
+            if not relevant_metrics:
+                return {
+                    'operation': operation,
+                    'period_hours': hours,
+                    'sample_count': 0,
+                    'message': 'No data available for this period'
+                }
+            
+            values = [metric.value for metric in relevant_metrics]
+            
+            return {
+                'operation': operation,
+                'period_hours': hours,
+                'sample_count': len(values),
+                'avg': sum(values) / len(values),
+                'min': min(values),
+                'max': max(values),
+                'p50': self._calculate_percentile(values, 50),
+                'p95': self._calculate_percentile(values, 95),
+                'p99': self._calculate_percentile(values, 99)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get performance summary for {operation}: {e}")
+            return {'error': str(e)}
+    
+    def get_error_summary(self, hours: int = 1) -> Dict[str, Any]:
+        """Get error summary for specified time period"""
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            
+            recent_errors = [
+                error for error in self.error_events
+                if error.timestamp > cutoff_time
+            ]
+            
+            # Group by error type
+            error_types = defaultdict(int)
+            error_components = defaultdict(int)
+            
+            for error in recent_errors:
+                error_types[error.error_type] += 1
+                error_components[error.component] += 1
+            
+            return {
+                'period_hours': hours,
+                'total_errors': len(recent_errors),
+                'error_rate': len(recent_errors) / max(1, self.request_counter),
+                'by_type': dict(error_types),
+                'by_component': dict(error_components),
+                'recent_errors': [
+                    {
+                        'timestamp': error.timestamp.isoformat(),
+                        'type': error.error_type,
+                        'component': error.component,
+                        'message': error.message
+                    }
+                    for error in recent_errors[-10:]  # Last 10 errors
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get error summary: {e}")
+            return {'error': str(e)}
+    
+    def _calculate_percentile(self, values: List[float], percentile: int) -> float:
+        """Calculate percentile of values"""
+        if not values:
+            return 0.0
+        
+        sorted_values = sorted(values)
+        index = int(len(sorted_values) * percentile / 100)
+        return sorted_values[min(index, len(sorted_values) - 1)]
+    
+    def _calculate_requests_per_minute(self) -> float:
+        """Calculate requests per minute over last hour"""
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=1)
+            
+            recent_requests = [
+                metric for metric in self.performance_metrics.get('request_duration', [])
+                if metric.timestamp > cutoff_time
+            ]
+            
+            if not recent_requests:
+                return 0.0
+            
+            return len(recent_requests) / 60.0  # Per minute
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to calculate requests per minute: {e}")
+            return 0.0
+    
+    def _calculate_sla_compliance(self) -> Dict[str, float]:
+        """Calculate SLA compliance metrics"""
+        try:
+            # Availability (uptime percentage)
+            uptime = time.time() - self.start_time
+            # Assume 99.9% availability target
+            availability = min(1.0, uptime / (uptime + 60))  # Assume max 1 minute downtime
+            
+            # Error rate compliance
+            error_rate = self.error_counter / max(1, self.request_counter)
+            error_rate_compliance = 1.0 if error_rate <= self.alert_thresholds['error_rate'] else 0.0
+            
+            # Response time compliance
+            recent_response_times = [
+                metric.value for metric in self.performance_metrics.get('request_duration', [])
+                if metric.timestamp > datetime.now() - timedelta(hours=1)
+            ]
+            
+            if recent_response_times:
+                p95_response_time = self._calculate_percentile(recent_response_times, 95)
+                response_time_compliance = 1.0 if p95_response_time <= self.alert_thresholds['response_time_p95'] else 0.0
             else:
-                # Clear alert if it exists
-                if alert_key in self.active_alerts:
-                    await self._clear_alert(condition)
-                    del self.active_alerts[alert_key]
+                response_time_compliance = 1.0
+            
+            return {
+                'availability': availability,
+                'error_rate_compliance': error_rate_compliance,
+                'response_time_compliance': response_time_compliance,
+                'overall_sla': (availability + error_rate_compliance + response_time_compliance) / 3
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to calculate SLA compliance: {e}")
+            return {'error': str(e)}
+    
+    def _cleanup_old_metrics(self):
+        """Clean up old metrics to prevent memory issues"""
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=self.metrics_retention_hours)
+            
+            for operation in self.performance_metrics:
+                # Remove old metrics
+                while (self.performance_metrics[operation] and 
+                       self.performance_metrics[operation][0].timestamp < cutoff_time):
+                    self.performance_metrics[operation].popleft()
                     
         except Exception as e:
-            logger.error(f"Alert condition check failed: {e}")
-
-    async def _fire_alert(self, condition: AlertCondition, current_value: float):
-        """Fire an alert"""
-        alert_data = {
-            'alert_name': condition.name,
-            'severity': condition.severity,
-            'description': condition.description,
-            'current_value': current_value,
-            'threshold': condition.threshold,
-            'timestamp': datetime.now().isoformat(),
-            'service': 'ai-service'
-        }
-        
-        logger.error(
-            f"🚨 ALERT FIRED: {condition.name}",
-            alert_data=alert_data
-        )
-        
-        # Here you would integrate with your alerting system
-        # Examples: PagerDuty, Slack, email, etc.
-        await self._send_alert_notification(alert_data)
-
-    async def _clear_alert(self, condition: AlertCondition):
-        """Clear an alert"""
-        logger.info(f"✅ Alert cleared: {condition.name}")
-
-    async def _send_alert_notification(self, alert_data: Dict[str, Any]):
-        """Send alert notification (integrate with your alerting system)"""
-        # Example integrations:
-        # - Send to Slack webhook
-        # - Send to PagerDuty
-        # - Send email
-        # - Write to alerting database
-        pass
-
-    async def _performance_analyzer(self):
-        """Analyze performance trends and generate insights"""
+            logger.error(f"❌ Failed to cleanup old metrics: {e}")
+    
+    def _check_alert_conditions(self):
+        """Check if any alert conditions are met"""
+        try:
+            # Check error rate
+            error_rate = self.error_counter / max(1, self.request_counter)
+            if error_rate > self.alert_thresholds['error_rate']:
+                logger.warning(
+                    f"🚨 High error rate alert: {error_rate:.3f} > {self.alert_thresholds['error_rate']}"
+                )
+            
+            # Check recent response times
+            recent_response_times = [
+                metric.value for metric in self.performance_metrics.get('request_duration', [])
+                if metric.timestamp > datetime.now() - timedelta(minutes=5)
+            ]
+            
+            if recent_response_times:
+                avg_response_time = sum(recent_response_times) / len(recent_response_times)
+                if avg_response_time > self.alert_thresholds['response_time_p95']:
+                    logger.warning(
+                        f"🚨 High response time alert: {avg_response_time:.3f}s > {self.alert_thresholds['response_time_p95']}s"
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to check alert conditions: {e}")
+    
+    def export_metrics(self, format: str = 'json') -> str:
+        """Export metrics in specified format"""
+        try:
+            if format == 'json':
+                return json.dumps(self.get_health_status(), indent=2)
+            elif format == 'prometheus':
+                return self._export_prometheus_metrics()
+            else:
+                raise ValueError(f"Unsupported export format: {format}")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to export metrics: {e}")
+            return f"Error exporting metrics: {e}"
+    
+    def _export_prometheus_metrics(self) -> str:
+        """Export metrics in Prometheus format"""
+        try:
+            metrics = []
+            
+            # Basic counters
+            metrics.append(f"ai_service_requests_total {self.request_counter}")
+            metrics.append(f"ai_service_errors_total {self.error_counter}")
+            
+            # Error rate
+            error_rate = self.error_counter / max(1, self.request_counter)
+            metrics.append(f"ai_service_error_rate {error_rate}")
+            
+            # Uptime
+            uptime = time.time() - self.start_time
+            metrics.append(f"ai_service_uptime_seconds {uptime}")
+            
+            # Response time metrics
+            recent_response_times = [
+                metric.value for metric in self.performance_metrics.get('request_duration', [])
+                if metric.timestamp > datetime.now() - timedelta(minutes=5)
+            ]
+            
+            if recent_response_times:
+                avg_response_time = sum(recent_response_times) / len(recent_response_times)
+                p95_response_time = self._calculate_percentile(recent_response_times, 95)
+                
+                metrics.append(f"ai_service_response_time_avg {avg_response_time}")
+                metrics.append(f"ai_service_response_time_p95 {p95_response_time}")
+            
+            # Component health
+            for component, status in self.health_statuses.items():
+                status_value = 1 if status.status == 'healthy' else 0
+                metrics.append(f'ai_service_component_healthy{{component="{component}"}} {status_value}')
+            
+            return '\n'.join(metrics)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to export Prometheus metrics: {e}")
+            return f"# Error exporting Prometheus metrics: {e}"
+    
+    async def start_background_monitoring(self):
+        """Start background monitoring tasks"""
+        try:
+            logger.info("🔄 Starting background monitoring tasks")
+            
+            # Start periodic health checks
+            asyncio.create_task(self._periodic_health_check())
+            
+            # Start resource monitoring
+            asyncio.create_task(self._monitor_resources())
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start background monitoring: {e}")
+    
+    async def _periodic_health_check(self):
+        """Periodic health check for all components"""
         while True:
             try:
-                if len(self.performance_history) < 10:
-                    await asyncio.sleep(300)  # Wait for more data
-                    continue
+                await asyncio.sleep(self.health_check_interval)
                 
-                # Analyze trends
-                recent_metrics = list(self.performance_history)[-10:]
+                # Update SLA metrics
+                self.sla_metrics.update(self._calculate_sla_compliance())
                 
-                # Calculate trends
-                latency_trend = self._calculate_trend([m.prediction_latency_p95 for m in recent_metrics])
-                accuracy_trend = self._calculate_trend([m.prediction_accuracy for m in recent_metrics])
-                
-                # Log performance insights
-                if latency_trend > 0.1:  # Increasing latency
-                    logger.warning("Performance degradation detected: latency increasing")
-                
-                if accuracy_trend < -0.05:  # Decreasing accuracy
-                    logger.warning("Model performance degradation detected: accuracy decreasing")
-                
-                await asyncio.sleep(300)  # Analyze every 5 minutes
+                # Log health summary
+                health = self.get_health_status()
+                logger.info(
+                    f"📊 Health Check - Status: {health['status']}, "
+                    f"Error Rate: {health['metrics']['error_rate']:.3f}, "
+                    f"Avg Response: {health['metrics']['avg_response_time_ms']:.1f}ms"
+                )
                 
             except Exception as e:
-                logger.error(f"Performance analysis failed: {e}")
-                await asyncio.sleep(300)
-
-    def _calculate_trend(self, values: List[float]) -> float:
-        """Calculate trend (slope) of a series of values"""
-        if len(values) < 2:
-            return 0.0
-        
-        n = len(values)
-        x_mean = (n - 1) / 2
-        y_mean = sum(values) / n
-        
-        numerator = sum((i - x_mean) * (values[i] - y_mean) for i in range(n))
-        denominator = sum((i - x_mean) ** 2 for i in range(n))
-        
-        if denominator == 0:
-            return 0.0
-        
-        return numerator / denominator
-
-    def _calculate_p95_latency(self) -> float:
-        """Calculate 95th percentile latency"""
-        all_times = []
-        for times_list in self.prediction_times.values():
-            all_times.extend(times_list)
-        
-        if not all_times:
-            return 0.0
-        
-        sorted_times = sorted(all_times)
-        index = int(0.95 * len(sorted_times))
-        return sorted_times[min(index, len(sorted_times) - 1)]
-
-    def _calculate_average_accuracy(self) -> float:
-        """Calculate average model accuracy across all users"""
-        # This would query recent accuracy scores from database
-        return 0.85  # Placeholder
-
-    def _calculate_error_rate(self) -> float:
-        """Calculate current error rate"""
-        total_requests = sum(self.user_activity.values())
-        total_errors = sum(self.error_counts.values())
-        
-        if total_requests == 0:
-            return 0.0
-        
-        return total_errors / total_requests
-
-    def _calculate_throughput(self) -> float:
-        """Calculate predictions per minute"""
-        # Count predictions in last minute
-        one_minute_ago = datetime.now() - timedelta(minutes=1)
-        recent_activity = sum(
-            count for count in self.user_activity.values()
-        )
-        return recent_activity
-
-    def record_prediction(self, user_id: str, prediction_type: str, 
-                         duration: float, model_version: str = "1.0"):
-        """Record a prediction for monitoring"""
-        # Update Prometheus metrics
-        PREDICTION_COUNTER.labels(
-            user_id=user_id,
-            prediction_type=prediction_type,
-            model_version=model_version
-        ).inc()
-        
-        PREDICTION_LATENCY.labels(
-            prediction_type=prediction_type
-        ).observe(duration)
-        
-        # Store for local analysis
-        self.prediction_times[prediction_type].append(duration)
-        self.user_activity[user_id] += 1
-        
-        # Keep only recent data
-        if len(self.prediction_times[prediction_type]) > 100:
-            self.prediction_times[prediction_type] = self.prediction_times[prediction_type][-100:]
-
-    def record_error(self, error_type: str, component: str):
-        """Record an error for monitoring"""
-        ERROR_COUNTER.labels(
-            error_type=error_type,
-            component=component
-        ).inc()
-        
-        self.error_counts[f"{component}_{error_type}"] += 1
-
-    def record_model_accuracy(self, model_type: str, user_id: str, accuracy: float):
-        """Record model accuracy"""
-        MODEL_ACCURACY.labels(
-            model_type=model_type,
-            user_id=user_id
-        ).set(accuracy)
-
-    def record_training_duration(self, training_type: str, duration: float):
-        """Record training duration"""
-        TRAINING_DURATION.labels(
-            training_type=training_type
-        ).observe(duration)
-
-    def get_health_status(self) -> Dict[str, Any]:
-        """Get current health status"""
-        return {
-            'status': 'healthy' if all(
-                status == 'healthy' for status in self.component_health.values()
-            ) else 'degraded',
-            'components': self.component_health,
-            'active_alerts': len(self.active_alerts),
-            'last_check': datetime.now().isoformat()
-        }
-
-    def get_performance_summary(self) -> Dict[str, Any]:
-        """Get performance summary"""
-        if not self.performance_history:
-            return {'status': 'insufficient_data'}
-        
-        latest = self.performance_history[-1]
-        
-        return {
-            'current_metrics': asdict(latest),
-            'trends': {
-                'latency_trend': self._calculate_trend([
-                    m.prediction_latency_p95 for m in self.performance_history
-                ]),
-                'accuracy_trend': self._calculate_trend([
-                    m.prediction_accuracy for m in self.performance_history
-                ])
-            },
-            'active_alerts': len(self.active_alerts),
-            'system_health': self.get_health_status()
-        }
-
-    async def cleanup(self):
-        """Cleanup monitoring resources"""
-        logger.info("🧹 Cleaning up monitoring system...")
-        self.metrics_buffer.clear()
-        self.performance_history.clear()
-        self.active_alerts.clear()
-        logger.info("✅ Monitoring system cleanup complete")
+                logger.error(f"❌ Periodic health check failed: {e}")
+    
+    async def _monitor_resources(self):
+        """Monitor system resources"""
+        while True:
+            try:
+                await asyncio.sleep(60)  # Check every minute
+                
+                # Update resource usage (simplified - in production use psutil)
+                import os
+                import psutil
+                
+                process = psutil.Process(os.getpid())
+                
+                self.resource_usage.update({
+                    'memory_mb': process.memory_info().rss / 1024 / 1024,
+                    'cpu_percent': process.cpu_percent(),
+                    'active_connections': len(process.connections())
+                })
+                
+            except ImportError:
+                # psutil not available, use basic monitoring
+                pass
+            except Exception as e:
+                logger.error(f"❌ Resource monitoring failed: {e}")
 
 # Global monitor instance
 ai_monitor = AIServiceMonitor()
 
-async def get_ai_monitor() -> AIServiceMonitor:
-    """Get the global AI monitor instance"""
-    return ai_monitor
+# Convenience functions
+def record_request_duration(duration: float, endpoint: str = "", user_id: str = None):
+    """Record request duration"""
+    ai_monitor.record_performance_metric('request_duration', duration, user_id, endpoint=endpoint)
+
+def record_prediction_time(duration: float, model_type: str, user_id: str = None):
+    """Record prediction time"""
+    ai_monitor.record_performance_metric('prediction_time', duration, user_id, model_type=model_type)
+
+def record_error(error_type: str, component: str, message: str = "", user_id: str = None):
+    """Record an error"""
+    ai_monitor.record_error(error_type, component, message, user_id)
+
+def update_component_health(component: str, status: str, response_time: float = 0.0):
+    """Update component health"""
+    ai_monitor.update_health_status(component, status, response_time)

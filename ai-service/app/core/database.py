@@ -1,8 +1,9 @@
-# ai-service/app/core/database.py
+# ai-service/app/core/database.py - Updated with fixed health check
 import asyncio
 from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 from contextlib import asynccontextmanager
 import logging
 
@@ -28,7 +29,7 @@ async def init_database():
         
         if not database_url:
             # Fallback database URL
-            database_url = "postgresql+asyncpg://postgres:password@localhost:5432/taskmasterpro"
+            database_url = "postgresql+asyncpg://postgres:nishant%3F%40980@localhost:5432/taskmasterpro"
             logger.warning(f"Using fallback database URL")
         
         logger.info(f"Connecting to database...")
@@ -52,7 +53,7 @@ async def init_database():
         
         # Test the connection
         async with async_session_maker() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))
             
         logger.info("✅ Database connection established successfully")
         
@@ -88,3 +89,81 @@ async def get_db_session():
             raise
         finally:
             await session.close()
+
+# FIXED: Updated health check functions
+async def test_database_connection() -> bool:
+    """Test if database connection is working"""
+    try:
+        if not async_session_maker:
+            return False
+            
+        # Use the session properly with async context manager
+        async with async_session_maker() as session:
+            result = await session.execute(text("SELECT 1 as test"))
+            test_value = result.scalar()
+            return test_value == 1
+            
+    except Exception as e:
+        logger.error(f"Database connection test failed: {e}")
+        return False
+
+async def get_database_health() -> dict:
+    """Get database health status - FIXED"""
+    try:
+        # Check if components are initialized
+        if not async_engine or not async_session_maker:
+            return {
+                "status": "unhealthy",
+                "error": "Database not initialized",
+                "connected": False,
+                "engine_initialized": async_engine is not None,
+                "session_maker_initialized": async_session_maker is not None
+            }
+        
+        # Test connection with proper error handling
+        is_connected = False
+        try:
+            is_connected = await test_database_connection()
+        except Exception as conn_error:
+            logger.error(f"Connection test failed: {conn_error}")
+        
+        health_info = {
+            "status": "healthy" if is_connected else "unhealthy",
+            "connected": is_connected,
+            "engine_initialized": async_engine is not None,
+            "session_maker_initialized": async_session_maker is not None
+        }
+        
+        # Add pool information if available
+        if async_engine and hasattr(async_engine, 'pool'):
+            try:
+                pool = async_engine.pool
+                health_info.update({
+                    "pool_size": pool.size(),
+                    "checked_out_connections": pool.checkedout(),
+                    "overflow_connections": pool.overflow(),
+                    "checked_in_connections": pool.checkedin()
+                })
+            except Exception as pool_error:
+                health_info["pool_error"] = str(pool_error)
+            
+        return health_info
+        
+    except Exception as e:
+        logger.error(f"Database health check error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "connected": False,
+            "engine_initialized": async_engine is not None,
+            "session_maker_initialized": async_session_maker is not None
+        }
+
+# Simple synchronous health check for compatibility
+def get_database_status() -> dict:
+    """Get basic database status synchronously"""
+    return {
+        "engine_initialized": async_engine is not None,
+        "session_maker_initialized": async_session_maker is not None,
+        "status": "initialized" if (async_engine and async_session_maker) else "not_initialized"
+    }
